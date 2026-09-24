@@ -8,14 +8,12 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "sim": "vitest run tests/simulation.test.ts"
+    "sim": "vitest run tests/simulation.test.ts",
+    "build:artifact": "npm run build && node scripts/build-artifact.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
     "vite": "^8.3.1",
     "vitest": "^5.0.1"
-  },
-  "dependencies": {
-    "@fontsource/jost": "^5.3.0"
   }
 }

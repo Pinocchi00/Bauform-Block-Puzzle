@@ -12,8 +12,9 @@ export const COLORS = {
   yellow: '#BE921F',
 };
 
-/** Couleurs possibles pour une forme (deux formes qui se suivent n'ont jamais la même). */
+/** Couleurs possibles pour une forme, et leur fréquence (le gris est plus rare). */
 export const SHAPE_COLORS = [COLORS.red, COLORS.blue, COLORS.yellow, COLORS.black, COLORS.grey];
+export const SHAPE_COLOR_WEIGHTS = [1, 1, 1, 0.8, 0.5];
 
 /** Espace entre deux tuiles, en pixels à l'écran. Le même partout. */
 export const GAP_PX = 3;
@@ -49,5 +50,8 @@ export const FAKE_AD_SECONDS = 3;
 /** Nombre de parties gardées pour l'écran de debug. */
 export const STATS_KEEP = 20;
 
-/** La pièce tenue est affichée au-dessus du doigt, de cette distance (pixels). */
-export const DRAG_LIFT_PX = 70;
+/** La pièce tenue est affichée au-dessus du doigt : écart en pixels entre le doigt et le bas de la pièce. */
+export const DRAG_LIFT_PX = 40;
+
+/** Taille maximale d’une cellule à l’écran (pixels), quand la figure est encore petite. */
+export const MAX_CELL_PX = 56;

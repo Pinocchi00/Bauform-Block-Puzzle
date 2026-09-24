@@ -149,7 +149,8 @@ export class Game {
   private startNextShape(): void {
     const done = this.active;
     for (const key of done.cells.keys()) this.figure.add(key);
-    const next = nextShape(this.rng, done, this.figure, this.figureBox, this.aspect);
+    const lastColors = this.shapes.slice(-2).map((s) => s.color);
+    const next = nextShape(this.rng, done, lastColors, this.figure, this.figureBox, this.aspect);
     this.shapes.push(next);
     const b = this.figureBox;
     this.figureBox = {

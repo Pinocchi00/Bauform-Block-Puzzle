@@ -1,0 +1,60 @@
+// Sauvegarde locale (dans le navigateur) : record, réglages, statistiques des parties.
+// En phase 2, ce fichier passera sur @capacitor/preferences.
+
+import { STATS_KEEP } from './config';
+
+export interface Settings {
+  sound: boolean;
+  vibrations: boolean;
+}
+
+export interface GameStats {
+  id: string;
+  seed: number;
+  date: number;
+  /** Temps de jeu effectif, en millisecondes (pauses et pubs exclues). */
+  durationMs: number;
+  shapesCompleted: number;
+  piecesPlaced: number;
+  score: number;
+}
+
+const PREFIX = 'bauform.';
+
+function read<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(PREFIX + key);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function write(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+  } catch {
+    // Stockage indisponible (navigation privée…) : le jeu marche quand même.
+  }
+}
+
+export const storage = {
+  getRecord: (): number => read('record', 0),
+  setRecord: (v: number) => write('record', v),
+
+  getSettings: (): Settings => ({ sound: true, vibrations: true, ...read<Partial<Settings>>('settings', {}) }),
+  setSettings: (s: Settings) => write('settings', s),
+
+  /** Nombre de parties lancées depuis la dernière pub interstitielle. */
+  getGamesSinceAd: (): number => read('gamesSinceAd', 0),
+  setGamesSinceAd: (v: number) => write('gamesSinceAd', v),
+
+  getStats: (): GameStats[] => read('stats', []),
+  /** Ajoute ou met à jour une partie (même id), et garde les 20 dernières. */
+  saveStats(s: GameStats): void {
+    const list = storage.getStats().filter((x) => x.id !== s.id);
+    list.unshift(s);
+    write('stats', list.slice(0, STATS_KEEP));
+  },
+  clearStats: () => write('stats', []),
+};

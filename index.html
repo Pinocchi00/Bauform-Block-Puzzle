@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#C1BAAE" />
+    <title>Bauform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <!-- APP:START -->
+    <div id="app" data-screen="play">
+      <svg id="decor" aria-hidden="true"></svg>
+      <svg id="board" aria-hidden="true"><g id="camera"><g id="figure"></g><g id="preview"></g></g></svg>
+
+      <header id="hud">
+        <div id="score-box">
+          <div id="score">0</div>
+          <div id="gain"></div>
+        </div>
+        <button id="pause-btn" class="icon-btn" aria-label="Pause"></button>
+      </header>
+
+      <div id="tray">
+        <div class="slot" data-slot="0"></div>
+        <div class="slot" data-slot="1"></div>
+        <div class="slot" data-slot="2"></div>
+      </div>
+
+      <svg id="drag-layer" aria-hidden="true"><g id="drag-piece"></g></svg>
+
+      <section id="pause-screen" class="screen">
+        <div class="head">
+          <div class="big-score" id="pause-score">0</div>
+          <div class="record-line"><span class="crown"></span><span id="pause-record">0</span></div>
+        </div>
+        <div class="menu">
+          <label class="row" for="opt-sound"><span>Son</span><input type="checkbox" id="opt-sound" class="switch" /></label>
+          <label class="row" for="opt-vibrations"><span>Vibrations</span><input type="checkbox" id="opt-vibrations" class="switch" /></label>
+          <button class="row link" id="restart-btn"><span>Recommencer</span><span class="ico" data-icon="restart"></span></button>
+        </div>
+        <button id="resume-btn" class="round-btn" aria-label="Reprendre"></button>
+      </section>
+
+      <section id="over-screen" class="screen">
+        <div class="head">
+          <div class="big-score xl" id="over-score">0</div>
+          <div class="record-line" id="over-record"></div>
+        </div>
+        <div id="over-figure-box">
+          <svg id="over-figure" aria-label="Votre figure"></svg>
+          <button id="expand-btn" class="icon-btn" aria-label="Voir la figure en plein écran"></button>
+        </div>
+        <div class="actions">
+          <button id="retry-btn" class="btn outline"><span class="ico" data-icon="video"></span>Réessayer la forme</button>
+          <button id="replay-btn" class="btn solid">Rejouer</button>
+        </div>
+      </section>
+
+      <section id="full-screen" class="screen"><svg id="full-figure" aria-label="Votre figure"></svg></section>
+
+      <section id="ad-screen" class="screen">
+        <div class="ad-label">[PUB]</div>
+        <div id="ad-count"></div>
+      </section>
+
+      <section id="debug-screen" class="screen">
+        <div class="debug-head">
+          <strong>Mesures</strong>
+          <button id="debug-close" class="icon-btn" aria-label="Fermer">✕</button>
+        </div>
+        <div id="debug-summary"></div>
+        <div class="debug-table"><table id="debug-table"></table></div>
+        <div id="debug-current"></div>
+        <button id="debug-clear" class="btn outline small">Effacer les mesures</button>
+      </section>
+    </div>
+    <!-- APP:END -->
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

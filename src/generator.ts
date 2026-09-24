@@ -5,6 +5,7 @@ import {
   OVERLAP_MAX,
   OVERLAP_MIN,
   SHAPE_COLORS,
+  SHAPE_COLOR_WEIGHTS,
   SHAPE_MAX_CELLS,
   SHAPE_MIN_CELLS,
 } from './config';
@@ -61,9 +62,10 @@ function randomSpec(rng: Rng, avoid?: ShapeKind): ShapeSpec {
   return { kind, a, b, rot: rng.int(0, 3), ox: 0, oy: 0 };
 }
 
-function pickColor(rng: Rng, previous?: string): string {
-  const choices = SHAPE_COLORS.filter((c) => c !== previous);
-  return rng.pick(choices);
+/** Couleur tirée au hasard, différente des couleurs à éviter (les deux formes précédentes). */
+function pickColor(rng: Rng, avoid: string[] = []): string {
+  const weights = SHAPE_COLORS.map((c, i) => (avoid.includes(c) ? 0 : SHAPE_COLOR_WEIGHTS[i]));
+  return SHAPE_COLORS[rng.weighted(weights)];
 }
 
 /** Première forme de la partie, autour de l'origine. */
@@ -82,6 +84,7 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
  * où elle chevauche la précédente comme il faut, puis on en choisit une parmi celles
  * qui gardent la figure la plus compacte (pour que la caméra n'ait pas à trop reculer).
  *
+ * @param avoidColors couleurs des dernières formes, à ne pas reprendre
  * @param figure cellules déjà couvertes par la figure
  * @param figureBox rectangle qui englobe la figure
  * @param aspect largeur / hauteur de la zone de jeu à l'écran
@@ -89,6 +92,7 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
 export function nextShape(
   rng: Rng,
   previous: Shape,
+  avoidColors: string[],
   figure: Set<string>,
   figureBox: Box,
   aspect: number,
@@ -135,7 +139,7 @@ export function nextShape(
     options.sort((p, q) => q.fit - p.fit);
     const best = options.slice(0, Math.max(1, Math.ceil(options.length * 0.35)));
     const { dx, dy } = rng.pick(best);
-    return new Shape({ ...base.spec, ox: dx, oy: dy }, pickColor(rng, previous.color));
+    return new Shape({ ...base.spec, ox: dx, oy: dy }, pickColor(rng, avoidColors));
   }
   throw new Error('Impossible de placer une nouvelle forme');
 }
