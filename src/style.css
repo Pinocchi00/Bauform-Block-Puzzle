@@ -147,31 +147,64 @@ button:focus-visible,
 }
 
 .slot {
+  position: relative;
   display: grid;
   place-items: center;
   touch-action: none;
   cursor: grab;
 }
 
+.slot > * {
+  grid-area: 1 / 1;
+}
+
 .slot svg {
   overflow: visible;
   display: block;
+  pointer-events: none;
+  transition: transform 0.15s;
+}
+
+/* Pièce tenue : elle quitte le plateau, un rond marque sa place. */
+.slot.held svg {
+  visibility: hidden;
 }
 
 .slot .marker {
+  display: none;
   width: 26px;
   height: 26px;
   border: 2px solid var(--black);
   border-radius: 50%;
   box-sizing: border-box;
-  display: grid;
   place-items: center;
+}
+
+.slot.held .marker {
+  display: grid;
 }
 
 .slot .marker::after {
   content: '';
   width: 8px;
   height: 8px;
+  border-radius: 50%;
+  background: var(--black);
+}
+
+/* Pièce choisie d'un simple toucher : légèrement agrandie, en attente d'un toucher sur la forme. */
+.slot.selected svg {
+  transform: scale(1.18);
+}
+
+.slot.selected::after {
+  content: '';
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
   border-radius: 50%;
   background: var(--black);
 }

@@ -142,13 +142,12 @@ function renderTray() {
   const cell = trayCellPx();
   slots.forEach((slot, i) => {
     const piece = game.hand[i];
-    if (drag && drag.slot === i) {
-      slot.innerHTML = '<div class="marker"></div>';
-    } else if (piece) {
-      slot.innerHTML = `<svg width="${piece.w * cell}" height="${piece.h * cell}">${pieceMarkup(piece, cell)}</svg>`;
-    } else {
-      slot.innerHTML = '';
-    }
+    // Le rond sert pendant qu'on tient la pièce (classe « held ») ; il est caché sinon.
+    slot.innerHTML = piece
+      ? `<svg width="${piece.w * cell}" height="${piece.h * cell}">${pieceMarkup(piece, cell)}</svg><div class="marker"></div>`
+      : '';
+    slot.classList.toggle('held', drag?.slot === i);
+    slot.classList.toggle('selected', selected === i);
   });
 }
 
@@ -197,6 +196,7 @@ function newGame(seed = randomSeed()) {
   clockStart = null;
   ending = false;
   drag = null;
+  selected = null;
   previewEl.innerHTML = '';
   dragPieceEl.innerHTML = '';
   figureScale = 0;
@@ -269,41 +269,63 @@ function showAd(done: () => void) {
 }
 
 // ---------- Glisser-déposer ----------
+// Au doigt, on utilise les événements « touch » (les plus fiables sur téléphone,
+// y compris dans une page intégrée à une autre appli) ; à la souris, les « pointer ».
+// Secours : toucher une pièce la sélectionne, toucher ensuite la forme la pose.
 
 interface Drag {
   slot: number;
   piece: Piece;
-  pointerId: number;
+  /** Identifiant du doigt (ou du pointeur souris) qui tient la pièce. */
+  id: number;
   cellPx: number;
   anchor: { x: number; y: number } | null;
+  startX: number;
+  startY: number;
+  moved: boolean;
+  /** La pièce était déjà sélectionnée avant ce toucher. */
+  wasSelected: boolean;
 }
 let drag: Drag | null = null;
+/** Pièce sélectionnée par un simple toucher, en attente d'un toucher sur la forme. */
+let selected: number | null = null;
 
-slots.forEach((slot, i) => {
-  slot.addEventListener('pointerdown', (e) => {
-    const piece = game.hand[i];
-    if (screen !== 'play' || ending || game.over || drag || !piece) return;
-    e.preventDefault();
-    drag = { slot: i, piece, pointerId: e.pointerId, cellPx: cam.s, anchor: null };
-    dragPieceEl.innerHTML = pieceMarkup(piece, cam.s);
-    renderTray();
-    moveDrag(e.clientX, e.clientY);
+function canInteract(): boolean {
+  return screen === 'play' && !ending && !game.over;
+}
+
+function beginDrag(slotIndex: number, id: number, x: number, y: number): boolean {
+  const piece = game.hand[slotIndex];
+  if (!canInteract() || drag || !piece) return false;
+  drag = {
+    slot: slotIndex,
+    piece,
+    id,
+    cellPx: cam.s,
+    anchor: null,
+    startX: x,
+    startY: y,
+    moved: false,
+    wasSelected: selected === slotIndex,
+  };
+  selected = null;
+  dragPieceEl.innerHTML = pieceMarkup(piece, cam.s);
+  // On ne redessine pas le plateau ici : l'élément touché doit rester en place,
+  // sinon certains téléphones arrêtent de suivre le doigt.
+  slots.forEach((s, k) => {
+    s.classList.toggle('held', k === slotIndex);
+    s.classList.remove('selected');
   });
-});
+  moveDrag(x, y);
+  return true;
+}
 
-function moveDrag(px: number, py: number) {
-  if (!drag) return;
-  const { piece, cellPx } = drag;
-  // La pièce flotte au-dessus du doigt, centrée horizontalement.
-  const left = px - (piece.w * cellPx) / 2;
-  const top = py - DRAG_LIFT_PX - piece.h * cellPx;
-  dragPieceEl.setAttribute('transform', `translate(${left} ${top})`);
-
-  // Emplacement aimanté : la position valide la plus proche, à moins de 3/4 de case.
+/** Position aimantée la plus proche pour une pièce dont le coin haut-gauche est à (left, top) en pixels. */
+function snap(piece: Piece, left: number, top: number, radius: number) {
   const fx = (left - cam.tx) / cam.s;
   const fy = (top - cam.ty) / cam.s;
   let best: { x: number; y: number } | null = null;
-  let bestDist = 0.75;
+  let bestDist = radius;
   for (let y = Math.floor(fy) - 1; y <= Math.ceil(fy) + 1; y++) {
     for (let x = Math.floor(fx) - 1; x <= Math.ceil(fx) + 1; x++) {
       const d = Math.hypot(x - fx, y - fy);
@@ -313,6 +335,20 @@ function moveDrag(px: number, py: number) {
       }
     }
   }
+  return best;
+}
+
+function moveDrag(px: number, py: number) {
+  if (!drag) return;
+  const { piece, cellPx } = drag;
+  if (Math.hypot(px - drag.startX, py - drag.startY) > 10) drag.moved = true;
+  // La pièce flotte au-dessus du doigt, centrée horizontalement.
+  const left = px - (piece.w * cellPx) / 2;
+  const top = py - DRAG_LIFT_PX - piece.h * cellPx;
+  dragPieceEl.setAttribute('transform', `translate(${left} ${top})`);
+
+  // Emplacement aimanté : la position valide la plus proche, à moins de 3/4 de case.
+  const best = snap(piece, left, top, 0.75);
   const same = best && drag.anchor && best.x === drag.anchor.x && best.y === drag.anchor.y;
   if (same || (!best && !drag.anchor)) return;
   drag.anchor = best;
@@ -321,42 +357,119 @@ function moveDrag(px: number, py: number) {
 
 function endDrag(drop: boolean) {
   if (!drag) return;
-  const { slot, anchor } = drag;
+  const { slot, anchor, moved, wasSelected } = drag;
   drag = null;
   previewEl.innerHTML = '';
   dragPieceEl.innerHTML = '';
-  if (drop && anchor) {
-    const res = game.place(slot, anchor.x, anchor.y);
-    if (res) {
-      feedback.place();
-      showGain(res.gain);
-      renderScore();
-      renderFigure();
-      if (res.completed) {
-        feedback.complete();
-        fitCamera(true);
-      }
-      if (res.gameOver) {
-        ending = true;
-        stopClock();
-        setTimeout(() => {
-          feedback.gameOver();
-          showGameOver();
-        }, 900);
-      }
-    }
+  slots.forEach((s) => s.classList.remove('held'));
+  if (drop && anchor && moved) {
+    placePiece(slot, anchor);
+  } else if (drop && !moved) {
+    // Simple toucher : la pièce est sélectionnée (ou désélectionnée).
+    selected = wasSelected ? null : slot;
   }
   renderTray();
 }
 
+function placePiece(slot: number, anchor: { x: number; y: number }) {
+  selected = null;
+  const res = game.place(slot, anchor.x, anchor.y);
+  if (!res) return;
+  feedback.place();
+  showGain(res.gain);
+  renderScore();
+  renderFigure();
+  if (res.completed) {
+    feedback.complete();
+    fitCamera(true);
+  }
+  if (res.gameOver) {
+    ending = true;
+    stopClock();
+    setTimeout(() => {
+      feedback.gameOver();
+      showGameOver();
+    }, 900);
+  }
+}
+
+/** Toucher sur la forme alors qu'une pièce est sélectionnée : on la pose là (centrée sur le doigt). */
+function tapBoard(x: number, y: number) {
+  if (selected === null || !canInteract()) return;
+  const piece = game.hand[selected];
+  const s = cam.s;
+  const anchor = piece && snap(piece, x - (piece.w * s) / 2, y - (piece.h * s) / 2, 1);
+  if (piece && anchor) placePiece(selected, anchor);
+  else selected = null;
+  renderTray();
+}
+
+const onControl = (t: EventTarget | null) => t instanceof Element && !!t.closest('button, label, .slot');
+
+// Doigt.
+slots.forEach((slot, i) => {
+  slot.addEventListener(
+    'touchstart',
+    (e) => {
+      const t = e.changedTouches[0];
+      if (beginDrag(i, t.identifier, t.clientX, t.clientY)) e.preventDefault();
+    },
+    { passive: false },
+  );
+});
+document.addEventListener(
+  'touchstart',
+  (e) => {
+    if (selected !== null && screen === 'play' && !onControl(e.target)) {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      tapBoard(t.clientX, t.clientY);
+    }
+  },
+  { passive: false },
+);
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    // En jeu, aucun geste ne doit faire défiler ou fermer la page.
+    if (screen === 'play' && e.cancelable) e.preventDefault();
+    if (!drag) return;
+    for (const t of e.changedTouches) if (t.identifier === drag.id) moveDrag(t.clientX, t.clientY);
+  },
+  { passive: false },
+);
+document.addEventListener('touchend', (e) => {
+  if (!drag) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier === drag.id) {
+      moveDrag(t.clientX, t.clientY);
+      endDrag(true);
+      return;
+    }
+  }
+});
+document.addEventListener('touchcancel', (e) => {
+  if (drag && [...e.changedTouches].some((t) => t.identifier === drag!.id)) endDrag(false);
+});
+
+// Souris (ordinateur) : les événements « touch » s'occupent déjà du doigt.
+slots.forEach((slot, i) => {
+  slot.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') return;
+    if (beginDrag(i, e.pointerId, e.clientX, e.clientY)) e.preventDefault();
+  });
+});
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch' && !drag && !onControl(e.target)) tapBoard(e.clientX, e.clientY);
+});
 window.addEventListener('pointermove', (e) => {
-  if (drag && e.pointerId === drag.pointerId) moveDrag(e.clientX, e.clientY);
+  if (drag && e.pointerType !== 'touch' && e.pointerId === drag.id) moveDrag(e.clientX, e.clientY);
 });
 window.addEventListener('pointerup', (e) => {
-  if (drag && e.pointerId === drag.pointerId) endDrag(true);
+  if (drag && e.pointerType !== 'touch' && e.pointerId === drag.id) endDrag(true);
 });
 window.addEventListener('pointercancel', (e) => {
-  if (drag && e.pointerId === drag.pointerId) endDrag(false);
+  if (drag && e.pointerType !== 'touch' && e.pointerId === drag.id) endDrag(false);
 });
 
 // ---------- Boutons et écrans ----------
