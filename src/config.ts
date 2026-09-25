@@ -33,11 +33,17 @@ export const SHAPE_MAX_CELLS = 36;
 export const OVERLAP_MIN = 0.1;
 export const OVERLAP_MAX = 0.3;
 
+/**
+ * Parfois, la nouvelle forme ne chevauche pas la précédente : elle est posée à côté,
+ * séparée par un espace de 10 à 30 % de sa taille (au moins une case).
+ */
+export const SPACED_SHAPE_CHANCE = 0.35;
+export const SPACING_MIN = 0.1;
+export const SPACING_MAX = 0.3;
+
 /** Probabilité de tirer une pièce de 1, 2, 3 ou 4 cellules. */
 export const PIECE_SIZE_WEIGHTS = [0.12, 0.28, 0.32, 0.28];
 
-/** Probabilité qu'une pièce parte d'une case de bord (pointue ou arrondie) quand il en reste. */
-export const EDGE_PIECE_CHANCE = 0.5;
 
 /** Score. */
 export const POINTS_PER_CELL = 10;

@@ -10,7 +10,16 @@ import {
 } from './config';
 import { feedback } from './feedback';
 import { Game, type Piece } from './game';
-import { ICONS, decorMarkup, figureBounds, figureMarkup, pieceMarkup, previewMarkup, type FigureMode } from './render';
+import {
+  ICONS,
+  decorMarkup,
+  figureBounds,
+  figureMarkup,
+  pieceMarkup,
+  posterLinesMarkup,
+  previewMarkup,
+  type FigureMode,
+} from './render';
 import { Rng, randomSeed } from './rng';
 import { storage, type GameStats } from './storage';
 
@@ -167,16 +176,24 @@ function renderDecor() {
   decor.innerHTML = decorMarkup(window.innerWidth, window.innerHeight, new Rng(game.seed ^ 0x5bd1e995), tray.top);
 }
 
-/** Dessine la figure entière dans un SVG (écran de fin, plein écran). */
+/**
+ * Dessine la figure entière dans un SVG (écran de fin, plein écran), comme une affiche :
+ * les traits fins, propres à chaque partie, passent derrière les formes.
+ */
 function drawFigureInto(svg: SVGSVGElement, mode: FigureMode, pad: number) {
   const r = svg.getBoundingClientRect();
-  const b = figureBounds(game, mode);
+  const b = figureBounds(game);
   const bw = b.x1 - b.x0;
   const bh = b.y1 - b.y0;
   const s = Math.max(1, Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh, MAX_CELL_PX * 1.5));
   const tx = (r.width - bw * s) / 2 - b.x0 * s;
   const ty = (r.height - bh * s) / 2 - b.y0 * s;
-  svg.innerHTML = `<g transform="translate(${tx} ${ty}) scale(${s})">${figureMarkup(game, GAP_PX / s, mode)}</g>`;
+  const lines = posterLinesMarkup(game, new Rng(game.seed ^ 0x27d4eb2f));
+  svg.innerHTML =
+    `<g transform="translate(${tx} ${ty}) scale(${s})">` +
+    lines +
+    figureMarkup(game, GAP_PX / s, mode, svg.id) +
+    '</g>';
 }
 
 // ---------- Partie ----------
@@ -373,9 +390,10 @@ function endDrag(drop: boolean) {
 
 function placePiece(slot: number, anchor: { x: number; y: number }) {
   selected = null;
+  const size = game.hand[slot]?.cells.length ?? 1;
   const res = game.place(slot, anchor.x, anchor.y);
   if (!res) return;
-  feedback.place();
+  feedback.place(size);
   showGain(res.gain);
   renderScore();
   renderFigure();
@@ -510,7 +528,7 @@ $('#retry-btn').addEventListener('click', () => {
 
 $('#expand-btn').addEventListener('click', () => {
   setScreen('full');
-  drawFigureInto($<SVGSVGElement>('#full-figure'), 'poster', 0);
+  drawFigureInto($<SVGSVGElement>('#full-figure'), 'poster', 24);
 });
 $('#full-screen').addEventListener('click', () => setScreen('over'));
 
@@ -525,7 +543,7 @@ window.addEventListener('resize', () => {
   fitCamera(false);
   renderTray();
   if (screen === 'over') drawFigureInto($<SVGSVGElement>('#over-figure'), 'end', 8);
-  if (screen === 'full') drawFigureInto($<SVGSVGElement>('#full-figure'), 'poster', 0);
+  if (screen === 'full') drawFigureInto($<SVGSVGElement>('#full-figure'), 'poster', 24);
 });
 
 // ---------- Écran de debug (appui long sur le score) ----------

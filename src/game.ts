@@ -2,7 +2,6 @@
 
 import {
   BONUS_PER_SHAPE_CELL,
-  EDGE_PIECE_CHANCE,
   PIECE_SIZE_WEIGHTS,
   POINTS_PER_CELL,
 } from './config';
@@ -10,14 +9,10 @@ import { firstShape, nextShape } from './generator';
 import { Rng } from './rng';
 import { Shape, cellKey, type Cell } from './shapes';
 
+/** Une case de pièce (toujours carrée), repérée par sa position dans la pièce. */
 export interface PieceCell {
-  /** Position dans la pièce. */
   dx: number;
   dy: number;
-  /** Cellule de la forme d'où vient ce morceau (pour dessiner sa géométrie). */
-  si: number;
-  sj: number;
-  sig: string;
 }
 
 export interface Piece {
@@ -77,13 +72,16 @@ export class Game {
     return this.shapes[this.shapes.length - 1];
   }
 
-  /** Vrai si la pièce peut être posée avec son coin haut-gauche en (ax, ay). */
+  /**
+   * Vrai si la pièce peut être posée avec son coin haut-gauche en (ax, ay) :
+   * chacune de ses cases tombe sur une case libre de la forme active.
+   * Les pièces sont carrées ; une fois posée, une case de bord prend la découpe de la forme.
+   */
   canPlace(piece: Piece, ax: number, ay: number): boolean {
     const shape = this.active;
     for (const c of piece.cells) {
       const key = cellKey(ax + c.dx, ay + c.dy);
-      const target = shape.cells.get(key);
-      if (!target || this.filled.has(key) || target.sig !== c.sig) return false;
+      if (!shape.cells.has(key) || this.filled.has(key)) return false;
     }
     return true;
   }
@@ -182,9 +180,7 @@ export class Game {
     const free = [...shape.cells.values()].filter((c) => !this.filled.has(c.key) && !reserved.has(c.key));
     if (!free.length) return null;
 
-    // Point de départ : souvent une case de bord (pointue ou arrondie), s'il en reste.
-    const edges = free.filter((c) => c.sig !== 'F');
-    const start = edges.length && this.rng.chance(EDGE_PIECE_CHANCE) ? this.rng.pick(edges) : this.rng.pick(free);
+    const start = this.rng.pick(free);
     const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
 
     // On fait grandir la pièce case par case, parmi les cases libres voisines.
@@ -209,7 +205,7 @@ export class Game {
     const minI = Math.min(...group.map((c) => c.i));
     const minJ = Math.min(...group.map((c) => c.j));
     const cells = group
-      .map((c) => ({ dx: c.i - minI, dy: c.j - minJ, si: c.i, sj: c.j, sig: c.sig }))
+      .map((c) => ({ dx: c.i - minI, dy: c.j - minJ }))
       .sort((p, q) => p.dy - q.dy || p.dx - q.dx);
     return {
       id: this.nextPieceId++,

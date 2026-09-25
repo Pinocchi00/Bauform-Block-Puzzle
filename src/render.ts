@@ -7,7 +7,7 @@ import { polyPath } from './geometry';
 import type { Rng } from './rng';
 import { cellKey, type Shape } from './shapes';
 
-/** 'play' : en jeu. 'end' : forme active en pointillés. 'poster' : formes terminées seulement. */
+/** 'play' : en jeu. 'end' : écran de fin (dernière forme en pointillés). 'poster' : plein écran. */
 export type FigureMode = 'play' | 'end' | 'poster';
 
 // Les tuiles d'une forme ne changent pas : on garde leurs chemins en mémoire.
@@ -32,9 +32,9 @@ function tilesPath(shape: Shape, keys: Iterable<string>, g: number): string {
   return d;
 }
 
-/** Rectangle qui englobe la figure (sans la forme active en mode 'poster'). */
-export function figureBounds(game: Game, mode: FigureMode) {
-  const shapes = mode === 'poster' && game.shapes.length > 1 ? game.shapes.slice(0, -1) : game.shapes;
+/** Rectangle qui englobe la figure. */
+export function figureBounds(game: Game) {
+  const shapes = game.shapes;
   return {
     x0: Math.min(...shapes.map((s) => s.box.x0)),
     y0: Math.min(...shapes.map((s) => s.box.y0)),
@@ -43,37 +43,104 @@ export function figureBounds(game: Game, mode: FigureMode) {
   };
 }
 
+/** Forme terminée : un aplat uni de sa couleur, sans tuiles. */
+function flatShape(shape: Shape): string {
+  return `<path fill="${shape.color}" style="mix-blend-mode:multiply" d="${polyPath(shape.outline)}"/>`;
+}
+
 /**
- * La figure, en unités monde (1 = une cellule). g = gap en unités monde.
+ * Forme inachevée à la fin : les cases remplies forment un aplat uni, les cases vides restent des trous.
+ * On découpe l'aplat de la forme avec l'ensemble des cases remplies (sans joints visibles entre elles).
+ */
+function partialShape(game: Game, shape: Shape, id: string): string {
+  const e = 0.002;
+  let rects = '';
+  for (const key of game.filled) {
+    const c = shape.cells.get(key);
+    if (c) rects += `<rect x="${c.i - e}" y="${c.j - e}" width="${1 + 2 * e}" height="${1 + 2 * e}"/>`;
+  }
+  if (!rects) return '';
+  return (
+    `<clipPath id="${id}">${rects}</clipPath>` +
+    `<path fill="${shape.color}" style="mix-blend-mode:multiply" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
+  );
+}
+
+/**
+ * La figure, en unités monde (1 = une cellule). g = gap des tuiles en unités monde.
  * Chaque forme est un calque en « multiply » : là où deux formes se superposent,
  * les couleurs se mélangent comme de l'encre.
+ * @param id préfixe unique (deux figures peuvent être dans la page en même temps)
  */
-export function figureMarkup(game: Game, g: number, mode: FigureMode): string {
+export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'): string {
   const last = game.shapes.length - 1;
-  const showActive = mode === 'play' || (mode === 'poster' && last === 0);
-  let out = '<g style="isolation:isolate">';
-  game.shapes.forEach((shape, idx) => {
-    if (idx === last && mode !== 'play') return;
-    const d = tilesPath(shape, game.filledCells(idx), g);
-    if (d) out += `<path fill="${shape.color}" style="mix-blend-mode:multiply" d="${d}"/>`;
-  });
   const active = game.active;
+  let out = '<g style="isolation:isolate">';
+  for (let idx = 0; idx < last; idx++) out += flatShape(game.shapes[idx]);
+
   if (mode === 'play') {
+    // Forme en cours : des tuiles, pour voir les cases à remplir.
+    const d = tilesPath(active, game.filled, g);
+    if (d) out += `<path fill="${active.color}" style="mix-blend-mode:multiply" d="${d}"/>`;
     const empty = [...active.cells.keys()].filter((k) => !game.filled.has(k));
     out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
     out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-  } else if (mode === 'end' || showActive) {
-    out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
+  } else {
+    out += partialShape(game, active, id + '-last');
+    if (mode === 'end') {
+      out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
+    }
   }
   return out + '</g>';
 }
 
-/** Une pièce, en pixels, coin haut-gauche en (0,0). */
+/**
+ * Traits fins de l'affiche de fin, en unités monde, calés sur les bords des formes.
+ * Tirés au hasard à partir de la seed : chaque partie donne une composition différente.
+ */
+export function posterLinesMarkup(game: Game, rng: Rng): string {
+  const b = figureBounds(game);
+  const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+  const far = size * 20;
+  const r = (a: number, c: number) => a + rng.next() * (c - a);
+  const shapeEdge = (axis: 'x' | 'y') => {
+    const s = rng.pick(game.shapes).box;
+    return axis === 'x' ? rng.pick([s.x0, s.x1]) : rng.pick([s.y0, s.y1]);
+  };
+  const line = (x1: number, y1: number, x2: number, y2: number) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" vector-effect="non-scaling-stroke"/>`;
+
+  let out = `<g stroke="${COLORS.black}" stroke-width="1" fill="none">`;
+  // Une verticale et une horizontale qui traversent toute l'affiche.
+  const vx = shapeEdge('x');
+  out += line(vx, -far, vx, far);
+  const hy = shapeEdge('y');
+  out += line(-far, hy, far, hy);
+  // Un trait qui part de la figure et file vers un bord.
+  if (rng.chance(0.7)) {
+    const y = shapeEdge('y');
+    out += rng.chance(0.5) ? line(b.x0 - r(1, 3), y, far, y) : line(-far, y, b.x1 + r(1, 3), y);
+  } else {
+    const x = shapeEdge('x');
+    out += rng.chance(0.5) ? line(x, b.y0 - r(1, 3), x, far) : line(x, -far, x, b.y1 + r(1, 3));
+  }
+  // Un grand cercle, centré sur un coin d'une forme.
+  const s = rng.pick(game.shapes).box;
+  const cx = rng.pick([s.x0, s.x1]);
+  const cy = rng.pick([s.y0, s.y1]);
+  out += `<circle cx="${cx}" cy="${cy}" r="${size * r(0.35, 0.65)}" vector-effect="non-scaling-stroke"/>`;
+  return out + '</g>';
+}
+
+/** Une pièce (toujours en cases carrées), en pixels, coin haut-gauche en (0,0). */
 export function pieceMarkup(piece: Piece, cellPx: number): string {
-  const g = GAP_PX / cellPx;
+  const h = GAP_PX / 2;
   let d = '';
   for (const c of piece.cells) {
-    d += polyPath(piece.shape.tile(c.si, c.sj, g), c.dx - c.si, c.dy - c.sj, cellPx);
+    const x = c.dx * cellPx + h;
+    const y = c.dy * cellPx + h;
+    const w = cellPx - GAP_PX;
+    d += `M${x} ${y}h${w}v${w}h${-w}Z`;
   }
   return `<path fill="${piece.shape.color}" d="${d}"/>`;
 }

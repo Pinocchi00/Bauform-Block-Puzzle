@@ -1,9 +1,13 @@
-// Tirage des nouvelles formes : type, taille, orientation et position aléatoires,
-// avec un chevauchement de 10 à 30 % sur la forme précédente.
+// Tirage des nouvelles formes : type, taille, orientation et position aléatoires.
+// En général elles chevauchent la précédente de 10 à 30 % ; parfois elles sont posées
+// à côté, séparées par un espace de 10 à 30 % de leur taille.
 
 import {
   OVERLAP_MAX,
   OVERLAP_MIN,
+  SPACED_SHAPE_CHANCE,
+  SPACING_MAX,
+  SPACING_MIN,
   SHAPE_COLORS,
   SHAPE_COLOR_WEIGHTS,
   SHAPE_MAX_CELLS,
@@ -97,6 +101,7 @@ export function nextShape(
   figureBox: Box,
   aspect: number,
 ): Shape {
+  const spaced = rng.chance(SPACED_SHAPE_CHANCE);
   for (let attempt = 0; attempt < 300; attempt++) {
     // Si rien ne convient, on relâche peu à peu les contraintes.
     const phase = Math.floor(attempt / 100);
@@ -107,11 +112,25 @@ export function nextShape(
     const n = cells.length;
     if (n < SHAPE_MIN_CELLS || n > SHAPE_MAX_CELLS) continue;
 
-    const options: { dx: number; dy: number; fit: number }[] = [];
+    const fitOf = (dx: number, dy: number) => {
+      const box = {
+        x0: Math.min(figureBox.x0, base.box.x0 + dx),
+        y0: Math.min(figureBox.y0, base.box.y0 + dy),
+        x1: Math.max(figureBox.x1, base.box.x1 + dx),
+        y1: Math.max(figureBox.y1, base.box.y1 + dy),
+      };
+      // Plus « fit » est grand, plus la figure reste grande à l'écran.
+      return Math.min(aspect / (box.x1 - box.x0), 1 / (box.y1 - box.y0));
+    };
+
+    // Forme espacée (si ça ne marche pas après quelques essais, on revient au chevauchement).
+    const options: Option[] = spaced && attempt < 60 ? spacedOptions(base, previous, figure, fitOf) : [];
+    if (spaced && attempt < 60 && !options.length) continue;
     // En dernier recours, on accepte de se poser n'importe où sur la figure.
     const pb = phase < 2 ? previous.box : figureBox;
     const bb = base.box;
-    for (let dy = Math.floor(pb.y0 - bb.y1); dy <= Math.ceil(pb.y1 - bb.y0); dy++) {
+    const overlapping = !options.length;
+    for (let dy = Math.floor(pb.y0 - bb.y1); overlapping && dy <= Math.ceil(pb.y1 - bb.y0); dy++) {
       for (let dx = Math.floor(pb.x0 - bb.x1); dx <= Math.ceil(pb.x1 - bb.x0); dx++) {
         let onPrevious = 0;
         let onFigure = 0;
@@ -124,15 +143,7 @@ export function nextShape(
         if (ratio < OVERLAP_MIN - slack || ratio > OVERLAP_MAX + slack) continue;
         if (onFigure / n > figureMax) continue;
         if (n - onFigure < MIN_FREE_CELLS) continue;
-        const box = {
-          x0: Math.min(figureBox.x0, bb.x0 + dx),
-          y0: Math.min(figureBox.y0, bb.y0 + dy),
-          x1: Math.max(figureBox.x1, bb.x1 + dx),
-          y1: Math.max(figureBox.y1, bb.y1 + dy),
-        };
-        // Plus « fit » est grand, plus la figure reste grande à l'écran.
-        const fit = Math.min(aspect / (box.x1 - box.x0), 1 / (box.y1 - box.y0));
-        options.push({ dx, dy, fit });
+        options.push({ dx, dy, fit: fitOf(dx, dy) });
       }
     }
     if (!options.length) continue;
@@ -142,4 +153,51 @@ export function nextShape(
     return new Shape({ ...base.spec, ox: dx, oy: dy }, pickColor(rng, avoidColors));
   }
   throw new Error('Impossible de placer une nouvelle forme');
+}
+
+type Option = { dx: number; dy: number; fit: number };
+
+/**
+ * Positions où la forme est posée à côté de la précédente, sans la toucher :
+ * séparée d'un espace de 10 à 30 % de sa taille (au moins une case), face à elle,
+ * et à bonne distance de toute la figure.
+ */
+function spacedOptions(
+  base: Shape,
+  previous: Shape,
+  figure: Set<string>,
+  fitOf: (dx: number, dy: number) => number,
+): Option[] {
+  const bb = base.box;
+  const pb = previous.box;
+  const size = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0);
+  const gapMin = Math.max(1, Math.round(SPACING_MIN * size));
+  const gapMax = Math.max(gapMin, Math.round(SPACING_MAX * size));
+  const cells = [...base.cells.values()];
+  const options: Option[] = [];
+  for (let dy = Math.floor(pb.y0 - bb.y1 - gapMax); dy <= Math.ceil(pb.y1 - bb.y0 + gapMax); dy++) {
+    for (let dx = Math.floor(pb.x0 - bb.x1 - gapMax); dx <= Math.ceil(pb.x1 - bb.x0 + gapMax); dx++) {
+      // Espace entre les deux rectangles englobants, horizontalement et verticalement.
+      const gx = Math.max(pb.x0 - (bb.x1 + dx), bb.x0 + dx - pb.x1);
+      const gy = Math.max(pb.y0 - (bb.y1 + dy), bb.y0 + dy - pb.y1);
+      const sideBySide = gx >= gapMin && gx <= gapMax && gy <= -2;
+      const aboveBelow = gy >= gapMin && gy <= gapMax && gx <= -2;
+      if (!sideBySide && !aboveBelow) continue;
+      // Aucune case de la figure trop près.
+      let tooClose = false;
+      for (const c of cells) {
+        for (let a = -gapMin; a <= gapMin && !tooClose; a++) {
+          for (let b = -gapMin; b <= gapMin; b++) {
+            if (figure.has(cellKey(c.i + dx + a, c.j + dy + b))) {
+              tooClose = true;
+              break;
+            }
+          }
+        }
+        if (tooClose) break;
+      }
+      if (!tooClose) options.push({ dx, dy, fit: fitOf(dx, dy) });
+    }
+  }
+  return options;
 }

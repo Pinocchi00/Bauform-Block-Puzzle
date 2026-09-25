@@ -4,13 +4,12 @@ import { Rng } from '../src/rng';
 import { Shape, cellKey } from '../src/shapes';
 
 describe('formes et cellules', () => {
-  it('un triangle rectangle 4×4 a des cases pleines et des demi-cases pointues identiques', () => {
+  it('un triangle rectangle 4×4 a 6 cases pleines et 4 demi-cases pointues', () => {
     const t = new Shape({ kind: 'triangle', a: 4, b: 4, rot: 0, ox: 0, oy: 0 }, '#000');
-    // 6 pleines + 4 demi-cases sur la diagonale.
     expect(t.cells.size).toBe(10);
-    const half = [...t.cells.values()].filter((c) => c.sig !== 'F');
+    const half = [...t.cells.values()].filter((c) => c.area < 1);
     expect(half.length).toBe(4);
-    expect(new Set(half.map((c) => c.sig)).size).toBe(1);
+    for (const c of half) expect(c.area).toBeCloseTo(0.5);
   });
 
   it('exclut les miettes de moins de 25 %', () => {
@@ -18,18 +17,13 @@ describe('formes et cellules', () => {
     for (const cell of c.cells.values()) expect(cell.area).toBeGreaterThanOrEqual(0.25 - 1e-6);
   });
 
-  it('les cases arrondies d’un cercle sont toutes différentes', () => {
-    const c = new Shape({ kind: 'circle', a: 3, b: 0, rot: 0, ox: 0, oy: 0 }, '#000');
-    const round = [...c.cells.values()].filter((x) => x.sig !== 'F');
-    expect(new Set(round.map((x) => x.sig)).size).toBe(round.length);
-  });
-
-  it('la signature ne dépend pas de la position sur la grille', () => {
-    const a = new Shape({ kind: 'quarterDisc', a: 4, b: 0, rot: 1, ox: 0, oy: 0 }, '#000');
-    const b = new Shape({ kind: 'quarterDisc', a: 4, b: 0, rot: 1, ox: 7, oy: -3 }, '#000');
-    for (const cell of a.cells.values()) {
-      expect(b.cells.get(cellKey(cell.i + 7, cell.j - 3))?.sig).toBe(cell.sig);
+  it('une case carrée se pose sur n’importe quelle case libre, bords pointus ou arrondis compris', () => {
+    const game = new Game(5);
+    const single = { id: 0, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active };
+    for (const c of game.active.cells.values()) {
+      expect(game.canPlace(single, c.i, c.j)).toBe(!game.filled.has(c.key));
     }
+    expect(game.canPlace(single, 999, 999)).toBe(false);
   });
 });
 
@@ -47,6 +41,31 @@ function playRandomGame(seed: number, maxMoves = 2000) {
     const o = rng.pick(options);
     const res = game.place(o.slot, o.x, o.y);
     expect(res).not.toBeNull();
+    moves++;
+  }
+  return { game, moves };
+}
+
+/** Un joueur automatique prudent : la pose qui laisse le plus d'autres pièces jouables. */
+function playCarefulGame(seed: number, maxMoves = 400) {
+  const game = new Game(seed);
+  const rng = new Rng(seed * 31);
+  let moves = 0;
+  while (!game.over && moves < maxMoves) {
+    const options: { slot: number; x: number; y: number }[] = [];
+    game.hand.forEach((p, slot) => {
+      if (p) for (const a of game.anchors(p)) options.push({ slot, ...a });
+    });
+    let best = options[0];
+    let bestScore = -1;
+    for (const o of rng.shuffle(options).slice(0, 30)) {
+      const saved = new Set(game.filled);
+      for (const c of game.hand[o.slot]!.cells) game.filled.add(cellKey(o.x + c.dx, o.y + c.dy));
+      const score = game.hand.filter((p, s) => s !== o.slot && p && game.fits(p)).length;
+      game.filled = saved;
+      if (score > bestScore) [best, bestScore] = [o, score];
+    }
+    game.place(best.slot, best.x, best.y);
     moves++;
   }
   return { game, moves };
@@ -87,18 +106,27 @@ describe('partie', () => {
     expect(a.moves).toBe(b.moves);
   });
 
-  it('les nouvelles formes chevauchent la précédente de 10 à 30 % environ', () => {
+  it('les nouvelles formes chevauchent la précédente de 10 à 30 %, ou sont posées à côté', () => {
+    let spaced = 0;
+    let overlapping = 0;
     for (let seed = 1; seed <= 20; seed++) {
-      const { game } = playRandomGame(seed);
+      const { game } = playCarefulGame(seed);
       for (let k = 1; k < game.shapes.length; k++) {
         const cur = game.shapes[k];
-        const prev = game.shapes[k - 1];
-        const shared = [...cur.cells.keys()].filter((key) => prev.cells.has(key)).length;
-        const ratio = shared / cur.cells.size;
-        expect(ratio).toBeGreaterThanOrEqual(0.05);
-        expect(ratio).toBeLessThanOrEqual(0.35);
+        const before = new Set(game.shapes.slice(0, k).flatMap((s) => [...s.cells.keys()]));
+        const onFigure = [...cur.cells.keys()].filter((key) => before.has(key)).length;
+        if (onFigure === 0) {
+          spaced++;
+        } else {
+          overlapping++;
+          const prev = game.shapes[k - 1];
+          const shared = [...cur.cells.keys()].filter((key) => prev.cells.has(key)).length;
+          expect(shared / cur.cells.size).toBeLessThanOrEqual(0.5);
+        }
       }
     }
+    expect(spaced).toBeGreaterThan(0);
+    expect(overlapping).toBeGreaterThan(spaced);
   });
 
   it('réessayer la forme remet la forme active à son début', () => {

@@ -35,8 +35,6 @@ export interface Cell {
   i: number;
   j: number;
   key: string;
-  /** Signature de la géométrie du morceau : 'F' pour une cellule pleine, sinon le contour découpé. */
-  sig: string;
   /** Part de la cellule couverte (0 à 1). */
   area: number;
 }
@@ -156,36 +154,8 @@ function computeCells(outline: Poly): Map<string, Cell> {
       const a = area(piece);
       if (a < MIN_CELL_FRACTION - 1e-6) continue;
       const key = cellKey(i, j);
-      cells.set(key, { i, j, key, sig: signature(piece, i, j, a), area: a });
+      cells.set(key, { i, j, key, area: a });
     }
   }
   return cells;
-}
-
-/**
- * Signature de la géométrie d'un morceau de cellule, dans le repère de la cellule.
- * Deux cellules ont la même signature si leurs morceaux sont exactement superposables :
- * c'est ce qui permet de vérifier qu'un bout pointu va bien sur une case pointue.
- */
-function signature(piece: Poly, i: number, j: number, a: number): string {
-  if (a > 1 - 1e-6) return 'F';
-  // Coordonnées locales arrondies, sans points en double ni alignés.
-  let pts = piece.map((p) => ({ x: Math.round((p.x - i) * 1000), y: Math.round((p.y - j) * 1000) }));
-  pts = pts.filter((p, k) => {
-    const q = pts[(k + pts.length - 1) % pts.length];
-    return p.x !== q.x || p.y !== q.y;
-  });
-  pts = pts.filter((p, k) => {
-    const prev = pts[(k + pts.length - 1) % pts.length];
-    const next = pts[(k + 1) % pts.length];
-    return (p.x - prev.x) * (next.y - prev.y) - (p.y - prev.y) * (next.x - prev.x) !== 0;
-  });
-  // Même point de départ pour tout le monde : le plus petit.
-  let start = 0;
-  pts.forEach((p, k) => {
-    const s = pts[start];
-    if (p.x < s.x || (p.x === s.x && p.y < s.y)) start = k;
-  });
-  const ordered = [...pts.slice(start), ...pts.slice(0, start)];
-  return ordered.map((p) => p.x + ':' + p.y).join(' ');
 }

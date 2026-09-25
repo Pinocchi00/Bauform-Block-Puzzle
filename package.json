@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "sim": "vitest run tests/simulation.test.ts",
+    "sim": "vitest run tests/simulation.test.ts --silent=false",
     "build:artifact": "npm run build && node scripts/build-artifact.mjs"
   },
   "devDependencies": {

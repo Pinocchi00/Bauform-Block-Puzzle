@@ -236,6 +236,8 @@ button:focus-visible,
   visibility: hidden;
 }
 
+/* À la fin, l'affiche a ses propres traits : on cache ceux du fond de jeu. */
+#app[data-screen='over'] #decor,
 #app[data-screen='full'] #decor,
 #app[data-screen='ad'] #decor {
   visibility: hidden;
