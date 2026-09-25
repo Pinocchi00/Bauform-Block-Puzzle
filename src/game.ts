@@ -52,7 +52,7 @@ export class Game {
   /** Cellules remplies de la forme active (chevauchement compris). */
   filled = new Set<string>();
   /** Cellules de la forme active déjà couvertes par la figure au départ. */
-  private prefilled = new Set<string>();
+  prefilled = new Set<string>();
   hand: (Piece | null)[] = [];
   score = 0;
   piecesPlaced = 0;
@@ -141,6 +141,15 @@ export class Game {
     this.retryUsed = true;
     this.over = false;
     this.dealHand();
+  }
+
+  /**
+   * Couleur d'une case de la forme active déjà couverte par la figure : celle de la plus
+   * ancienne forme qui la couvre (c'est elle qui est dessinée par-dessus).
+   */
+  coverColor(key: string): string {
+    const old = this.shapes.slice(0, -1).find((s) => s.cells.has(key));
+    return old ? old.color : this.active.color;
   }
 
   /** Liste des formes avec leurs cellules remplies, pour l'affichage. */

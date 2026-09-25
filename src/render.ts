@@ -49,21 +49,35 @@ function flatShape(shape: Shape): string {
 }
 
 /**
- * Forme inachevée à la fin : les cases remplies forment un aplat uni, les cases vides restent des trous.
- * On découpe l'aplat de la forme avec l'ensemble des cases remplies (sans joints visibles entre elles).
+ * Aplat uni de la forme limité à certaines cases (sans joints visibles entre elles).
+ * Sert pour la forme inachevée à la fin : les cases vides restent des trous.
  */
-function partialShape(game: Game, shape: Shape, id: string): string {
+function cellsFlat(shape: Shape, keys: Iterable<string>, color: string, id: string): string {
   const e = 0.002;
   let rects = '';
-  for (const key of game.filled) {
+  for (const key of keys) {
     const c = shape.cells.get(key);
     if (c) rects += `<rect x="${c.i - e}" y="${c.j - e}" width="${1 + 2 * e}" height="${1 + 2 * e}"/>`;
   }
   if (!rects) return '';
   return (
     `<clipPath id="${id}">${rects}</clipPath>` +
-    `<path fill="${shape.color}" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
+    `<path fill="${color}" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
   );
+}
+
+/**
+ * Cases de la forme active déjà couvertes par une ancienne forme, regroupées par couleur.
+ * Elles prennent la couleur de cette ancienne forme : là où elle chevauche la nouvelle,
+ * elle entre proprement dans sa grille, sans bouts d'une autre couleur qui dépassent.
+ */
+function prefilledByColor(game: Game): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const key of game.prefilled) {
+    const color = game.coverColor(key);
+    groups.set(color, [...(groups.get(color) ?? []), key]);
+  }
+  return groups;
 }
 
 /**
@@ -96,15 +110,20 @@ export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'
   const active = game.active;
   let out = '<g>';
 
+  const placed = [...game.filled].filter((k) => !game.prefilled.has(k));
+  const covered = prefilledByColor(game);
   if (mode === 'play') {
     // Forme en cours, tout en dessous : des tuiles, pour voir les cases à remplir.
-    const d = tilesPath(active, game.filled, g);
+    const d = tilesPath(active, placed, g);
     if (d) out += `<path fill="${active.color}" d="${d}"/>`;
+    for (const [color, keys] of covered) out += `<path fill="${color}" d="${tilesPath(active, keys, g)}"/>`;
     const empty = [...active.cells.keys()].filter((k) => !game.filled.has(k));
     out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
     out += slivers(active, g, id + '-slivers');
   } else {
-    out += partialShape(game, active, id + '-last');
+    out += cellsFlat(active, placed, active.color, id + '-last');
+    let n = 0;
+    for (const [color, keys] of covered) out += cellsFlat(active, keys, color, `${id}-cover${n++}`);
   }
   // Formes terminées : la plus ancienne en dernier, donc au-dessus.
   for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
