@@ -70,6 +70,26 @@ button:focus-visible,
   z-index: 20;
 }
 
+/* Les formes voisines s'effacent en fondu près du score et du plateau, pour rester lisibles. */
+#board {
+  --fade-top: calc(var(--safe-top) + var(--hud-h) - 24px);
+  --fade-bottom: calc(var(--safe-bottom) + var(--tray-h));
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent var(--fade-top),
+    #000 calc(var(--fade-top) + 24px),
+    #000 calc(100% - var(--fade-bottom) - 24px),
+    transparent calc(100% - var(--fade-bottom))
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent var(--fade-top),
+    #000 calc(var(--fade-top) + 24px),
+    #000 calc(100% - var(--fade-bottom) - 24px),
+    transparent calc(100% - var(--fade-bottom))
+  );
+}
+
 /* ---------- Jeu ---------- */
 
 #hud {

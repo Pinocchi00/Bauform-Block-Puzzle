@@ -94,7 +94,7 @@ function viewport() {
   const tray = $('#tray').getBoundingClientRect();
   const pad = 20;
   const top = hud.bottom + 8;
-  const bottom = tray.top - 16;
+  const bottom = tray.top - 24; // en dessous, les formes s'effacent en fondu
   return { x: pad, y: top, w: window.innerWidth - pad * 2, h: Math.max(80, bottom - top) };
 }
 
