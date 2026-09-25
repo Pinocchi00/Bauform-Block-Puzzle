@@ -59,13 +59,13 @@ export const PIECE_SIZE_WEIGHTS = [0.03, 0.3, 0.35, 0.32];
  * mais avec cette probabilité c'est une pièce au hasard, qui peut ne rentrer nulle part.
  * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
  */
-export const RANDOM_REFILL_CHANCE = 0.1;
+export const RANDOM_REFILL_CHANCE = 0.05;
 
 /**
  * Quand il ne reste que des cases isolées, probabilité que la pièce de remplacement soit
  * un cube seul pour les boucher. Sinon, c'est une pièce au hasard : laisser des trous se paie.
  */
-export const SINGLE_PIECE_CHANCE = 0.6;
+export const SINGLE_PIECE_CHANCE = 0.75;
 
 /** Score. */
 export const POINTS_PER_CELL = 10;
