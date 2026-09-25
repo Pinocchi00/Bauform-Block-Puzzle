@@ -2,6 +2,7 @@
 
 import {
   BONUS_PER_SHAPE_CELL,
+  RANDOM_REFILL_CHANCE,
   PIECE_SIZE_WEIGHTS,
   POINTS_PER_CELL,
 } from './config';
@@ -21,6 +22,8 @@ export interface Piece {
   w: number;
   h: number;
   shape: Shape;
+  /** Cases libres de la forme d'où la pièce a été tirée (vide pour une pièce au hasard). */
+  source: string[];
 }
 
 export interface MoveResult {
@@ -122,8 +125,8 @@ export class Game {
       this.startNextShape();
     } else {
       this.score += gain;
-      // Les 3 pièces sont posées : on en distribue 3 nouvelles.
-      if (this.hand.every((p) => !p)) this.dealHand();
+      // Toujours 3 pièces en main : la pièce posée est remplacée tout de suite.
+      this.hand[slot] = this.refillPiece();
     }
 
     this.over = !this.hand.some((p) => p && this.fits(p));
@@ -165,14 +168,59 @@ export class Game {
   }
 
   /**
-   * Distribue 3 pièces. Chacune est tirée d'un groupe de cellules libres de la forme,
-   * et les 3 groupes ne se chevauchent pas : au moment où elles arrivent, les 3 pièces
-   * rentrent ensemble. C'est la façon de les poser qui peut ensuite en bloquer une.
+   * Pièce de remplacement. Le plus souvent, elle est tirée des cases libres (elle rentre).
+   * Parfois (RANDOM_REFILL_CHANCE), c'est une pièce au hasard qui peut ne rentrer nulle part :
+   * sans cette part de hasard, la pièce qui arrive rentrerait toujours et on ne pourrait
+   * jamais perdre. Il faut donc garder de la place pour les pièces qui viennent.
+   */
+  private refillPiece(): Piece | null {
+    if (this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece();
+    // On évite les cases d'où viennent les autres pièces en main, si c'est possible.
+    const reserved = new Set(
+      this.hand.flatMap((p) => (p ? p.source : [])).filter((k) => !this.filled.has(k)),
+    );
+    return this.makePiece(reserved) ?? this.makePiece(new Set());
+  }
+
+  /** Pièce au hasard (1 à 4 cases), sans lien avec les cases libres. */
+  private randomPiece(): Piece {
+    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+    const cells = [{ dx: 0, dy: 0 }];
+    const has = (x: number, y: number) => cells.some((c) => c.dx === x && c.dy === y);
+    while (cells.length < size) {
+      const from = this.rng.pick(cells);
+      const [di, dj] = this.rng.pick(DIRS);
+      if (!has(from.dx + di, from.dy + dj)) cells.push({ dx: from.dx + di, dy: from.dy + dj });
+    }
+    return this.buildPiece(cells, []);
+  }
+
+  private buildPiece(raw: { dx: number; dy: number }[], source: string[]): Piece {
+    const minX = Math.min(...raw.map((c) => c.dx));
+    const minY = Math.min(...raw.map((c) => c.dy));
+    const cells = raw
+      .map((c) => ({ dx: c.dx - minX, dy: c.dy - minY }))
+      .sort((p, q) => p.dy - q.dy || p.dx - q.dx);
+    return {
+      id: this.nextPieceId++,
+      cells,
+      w: Math.max(...cells.map((c) => c.dx)) + 1,
+      h: Math.max(...cells.map((c) => c.dy)) + 1,
+      shape: this.active,
+      source,
+    };
+  }
+
+  /**
+   * Distribue 3 pièces neuves (début de forme, ou « réessayer la forme »). Chacune est tirée
+   * d'un groupe de cellules libres de la forme, si possible sans se chevaucher : au moment
+   * où elles arrivent, les 3 pièces rentrent ensemble.
    */
   private dealHand(): void {
     const reserved = new Set<string>();
     this.hand = [];
-    for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.makePiece(reserved));
+    // Les 3 pièces viennent de cases différentes si possible ; sinon elles peuvent se recouper.
+    for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.makePiece(reserved) ?? this.makePiece(new Set()));
   }
 
   /** Fait grandir un groupe case par case, parmi les cases libres voisines. */
@@ -231,17 +279,9 @@ export class Game {
     }
     for (const c of group) reserved.add(c.key);
 
-    const minI = Math.min(...group.map((c) => c.i));
-    const minJ = Math.min(...group.map((c) => c.j));
-    const cells = group
-      .map((c) => ({ dx: c.i - minI, dy: c.j - minJ }))
-      .sort((p, q) => p.dy - q.dy || p.dx - q.dx);
-    return {
-      id: this.nextPieceId++,
-      cells,
-      w: Math.max(...cells.map((c) => c.dx)) + 1,
-      h: Math.max(...cells.map((c) => c.dy)) + 1,
-      shape,
-    };
+    return this.buildPiece(
+      group.map((c) => ({ dx: c.i, dy: c.j })),
+      group.map((c) => c.key),
+    );
   }
 }

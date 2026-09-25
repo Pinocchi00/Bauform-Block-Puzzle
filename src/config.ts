@@ -53,6 +53,14 @@ export const SPACING_MAX = 0.2;
  */
 export const PIECE_SIZE_WEIGHTS = [0.03, 0.3, 0.35, 0.32];
 
+/**
+ * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main).
+ * La nouvelle pièce est le plus souvent tirée des cases libres de la forme (elle rentre),
+ * mais avec cette probabilité c'est une pièce au hasard, qui peut ne rentrer nulle part.
+ * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
+ */
+export const RANDOM_REFILL_CHANCE = 0.1;
+
 /** Score. */
 export const POINTS_PER_CELL = 10;
 export const BONUS_PER_SHAPE_CELL = 10;

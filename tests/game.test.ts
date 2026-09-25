@@ -19,7 +19,7 @@ describe('formes et cellules', () => {
 
   it('une case carrée se pose sur n’importe quelle case libre, bords pointus ou arrondis compris', () => {
     const game = new Game(5);
-    const single = { id: 0, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active };
+    const single = { id: 0, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active, source: [] };
     for (const c of game.active.cells.values()) {
       expect(game.canPlace(single, c.i, c.j)).toBe(!game.filled.has(c.key));
     }
@@ -76,6 +76,13 @@ describe('partie', () => {
     for (let seed = 1; seed <= 30; seed++) {
       const game = new Game(seed);
       for (const p of game.hand) if (p) expect(game.fits(p)).toBe(true);
+    }
+  });
+
+  it('il y a toujours 3 pièces en main', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const { game } = playCarefulGame(seed);
+      expect(game.hand.filter((p) => p).length).toBe(3);
     }
   });
 
