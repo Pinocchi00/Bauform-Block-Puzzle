@@ -3,6 +3,7 @@
 import {
   BONUS_PER_SHAPE_CELL,
   RANDOM_REFILL_CHANCE,
+  SINGLE_PIECE_CHANCE,
   PIECE_SIZE_WEIGHTS,
   POINTS_PER_CELL,
 } from './config';
@@ -173,16 +174,19 @@ export class Game {
    * sans cette part de hasard, la pièce qui arrive rentrerait toujours et on ne pourrait
    * jamais perdre. Il faut donc garder de la place pour les pièces qui viennent.
    */
-  private refillPiece(): Piece | null {
+  private refillPiece(): Piece {
     if (this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece();
-    // On évite les cases d'où viennent les autres pièces en main, si c'est possible.
+    // On évite les cases d'où viennent les autres pièces en main (pas deux fois la même pièce),
+    // tant que ces pièces peuvent encore y aller (leurs cases d'origine sont toutes libres).
     const reserved = new Set(
-      this.hand.flatMap((p) => (p ? p.source : [])).filter((k) => !this.filled.has(k)),
+      this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
     );
-    return this.makePiece(reserved) ?? this.makePiece(new Set());
+    // Un cube seul ne sert qu'à boucher un trou isolé : il n'arrive qu'exceptionnellement.
+    // Laisser des trous se paie donc : il faut poser ses pièces proprement.
+    const single = this.rng.chance(SINGLE_PIECE_CHANCE) ? this.makePiece(reserved, true) : null;
+    return this.makePiece(reserved, false) ?? single ?? this.randomPiece();
   }
 
-  /** Pièce au hasard (1 à 4 cases), sans lien avec les cases libres. */
   private randomPiece(): Piece {
     const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
     const cells = [{ dx: 0, dy: 0 }];
@@ -220,7 +224,9 @@ export class Game {
     const reserved = new Set<string>();
     this.hand = [];
     // Les 3 pièces viennent de cases différentes si possible ; sinon elles peuvent se recouper.
-    for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.makePiece(reserved) ?? this.makePiece(new Set()));
+    for (let s = 0; s < HAND_SIZE; s++) {
+      this.hand.push(this.makePiece(reserved, false) ?? this.makePiece(reserved, true) ?? this.randomPiece());
+    }
   }
 
   /** Fait grandir un groupe case par case, parmi les cases libres voisines. */
@@ -244,22 +250,29 @@ export class Game {
     return group;
   }
 
-  private makePiece(reserved: Set<string>): Piece | null {
+  /**
+   * Pièce tirée d'un groupe de cases libres (hors cases réservées).
+   * Les pièces partent de préférence des bords de la forme (pointes, arrondis, rebords)
+   * et des culs-de-sac, pour que les bords se remplissent avec de vraies pièces.
+   * @param allowSingle accepte un cube seul ; sinon renvoie null s'il n'y a que des cases isolées
+   */
+  private makePiece(reserved: Set<string>, allowSingle: boolean): Piece | null {
     const shape = this.active;
     const free = [...shape.cells.values()].filter((c) => !this.filled.has(c.key) && !reserved.has(c.key));
     if (!free.length) return null;
 
-    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+    let size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+    if (!allowSingle) size = Math.max(2, size);
     const freeKeys = new Set(free.map((c) => c.key));
     const neighbours = (c: Cell) =>
       DIRS.filter(([di, dj]) => freeKeys.has(cellKey(c.i + di, c.j + dj))).length;
+    const onEdge = (c: Cell) =>
+      c.area < 1 || DIRS.some(([di, dj]) => !shape.cells.has(cellKey(c.i + di, c.j + dj)));
 
-    // Point de départ : de préférence un cul-de-sac (une seule case libre voisine),
-    // pour éviter de laisser des cases isolées qui ne pourraient recevoir qu'un cube seul.
-    // Une case déjà isolée n'est prise que s'il n'y a rien d'autre.
     const connected = free.filter((c) => neighbours(c) > 0);
-    const starts = connected.length ? connected : free;
-    const weights = starts.map((c) => (neighbours(c) === 1 ? 3 : 1));
+    if (!connected.length && !allowSingle) return null;
+    const starts = connected.length && !(allowSingle && size === 1) ? connected : free;
+    const weights = starts.map((c) => (neighbours(c) === 1 ? 3 : 1) * (onEdge(c) ? 3 : 1));
 
     // Plusieurs essais : on garde le groupe le plus proche de la taille voulue et qui,
     // une fois retiré, laisse le moins de cases isolées (futurs cubes seuls).
@@ -277,6 +290,7 @@ export class Game {
       const score = (size - g.length) * 10 + isolated * 3;
       if (score < bestScore) [group, bestScore] = [g, score];
     }
+    if (group.length < 2 && !allowSingle) return null;
     for (const c of group) reserved.add(c.key);
 
     return this.buildPiece(

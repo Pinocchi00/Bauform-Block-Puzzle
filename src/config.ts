@@ -61,6 +61,12 @@ export const PIECE_SIZE_WEIGHTS = [0.03, 0.3, 0.35, 0.32];
  */
 export const RANDOM_REFILL_CHANCE = 0.1;
 
+/**
+ * Quand il ne reste que des cases isolées, probabilité que la pièce de remplacement soit
+ * un cube seul pour les boucher. Sinon, c'est une pièce au hasard : laisser des trous se paie.
+ */
+export const SINGLE_PIECE_CHANCE = 0.6;
+
 /** Score. */
 export const POINTS_PER_CELL = 10;
 export const BONUS_PER_SHAPE_CELL = 10;

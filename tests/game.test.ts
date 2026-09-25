@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/game';
+import { firstShape, nextShape } from '../src/generator';
 import { Rng } from '../src/rng';
 import { Shape, cellKey } from '../src/shapes';
 
@@ -113,20 +114,30 @@ describe('partie', () => {
     expect(a.moves).toBe(b.moves);
   });
 
-  it('les nouvelles formes chevauchent la précédente de 10 à 30 %, ou sont posées à côté', () => {
+  it('les nouvelles formes chevauchent la précédente de 10 à 20 %, ou sont posées à côté', () => {
     let spaced = 0;
     let overlapping = 0;
     for (let seed = 1; seed <= 20; seed++) {
-      const { game } = playCarefulGame(seed);
-      for (let k = 1; k < game.shapes.length; k++) {
-        const cur = game.shapes[k];
-        const before = new Set(game.shapes.slice(0, k).flatMap((s) => [...s.cells.keys()]));
-        const onFigure = [...cur.cells.keys()].filter((key) => before.has(key)).length;
+      const rng = new Rng(seed);
+      const shapes = [firstShape(rng)];
+      const figure = new Set<string>();
+      let box = { ...shapes[0].box };
+      for (let k = 1; k <= 8; k++) {
+        const prev = shapes[shapes.length - 1];
+        for (const key of prev.cells.keys()) figure.add(key);
+        const cur = nextShape(rng, prev, [], figure, box, 0.46);
+        shapes.push(cur);
+        box = {
+          x0: Math.min(box.x0, cur.box.x0),
+          y0: Math.min(box.y0, cur.box.y0),
+          x1: Math.max(box.x1, cur.box.x1),
+          y1: Math.max(box.y1, cur.box.y1),
+        };
+        const onFigure = [...cur.cells.keys()].filter((key) => figure.has(key)).length;
         if (onFigure === 0) {
           spaced++;
         } else {
           overlapping++;
-          const prev = game.shapes[k - 1];
           const shared = [...cur.cells.keys()].filter((key) => prev.cells.has(key)).length;
           expect(shared / cur.cells.size).toBeLessThanOrEqual(0.5);
         }

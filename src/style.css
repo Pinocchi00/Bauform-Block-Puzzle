@@ -185,11 +185,6 @@ button:focus-visible,
   transition: transform 0.15s;
 }
 
-/* Pièce qui ne rentre nulle part pour l'instant. */
-.slot.blocked svg {
-  opacity: 0.35;
-}
-
 /* Pièce tenue : elle quitte le plateau, un rond marque sa place. */
 .slot.held svg {
   visibility: hidden;

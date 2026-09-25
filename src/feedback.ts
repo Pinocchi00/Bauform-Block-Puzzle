@@ -1,43 +1,65 @@
-// Petits sons (générés, sans fichier audio) et vibrations.
+// Sons (générés, sans fichier audio) et vibrations.
 // En phase 2, les vibrations passeront par @capacitor/haptics.
 //
-// Sons calmes mais jamais identiques : chaque pose joue une note douce d'une gamme
-// pentatonique (qui sonne toujours juste), en se promenant d'une note à sa voisine,
-// avec un léger écho. Hauteur, volume et timbre varient un peu à chaque fois.
+// Esprit « musique de film » : tout suit une suite d'accords (la mineur, fa, do, sol),
+// qui avance d'un accord à chaque forme terminée. Chaque pose joue une note douce et grave
+// de l'accord en cours, dans une grande réverbération ; une forme terminée fait monter une
+// nappe chaude de l'accord suivant. Pas d'aigus agressifs : tout passe par un filtre doux.
 
 import { storage } from './storage';
 
-// Gamme pentatonique de ré, sur deux octaves, en hertz (registre médium, doux).
-const SCALE = [220, 246.94, 293.66, 329.63, 369.99, 440, 493.88, 587.33, 659.25, 739.99, 880];
+/** Notes (numéros MIDI) de chaque accord, pour la mélodie, et sa basse. */
+const CHORDS = [
+  { bass: 45, notes: [57, 60, 64, 69, 72] }, // la mineur
+  { bass: 41, notes: [57, 60, 65, 69, 72] }, // fa majeur
+  { bass: 48, notes: [55, 60, 64, 67, 72] }, // do majeur
+  { bass: 43, notes: [55, 59, 62, 67, 71] }, // sol majeur
+];
+
+const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
 let ctx: AudioContext | null = null;
-let out: AudioNode | null = null;
-/** Position dans la gamme : elle avance au hasard, d'une ou deux notes à la fois. */
-let step = 4;
+let input: AudioNode | null = null;
+let chord = 0;
+/** Position dans l'accord : la mélodie avance d'une note voisine à la fois. */
+let step = 2;
+
+/** Réverbération : une « salle » fabriquée avec du bruit qui s'éteint lentement. */
+function makeReverb(a: AudioContext, seconds: number): ConvolverNode {
+  const rate = a.sampleRate;
+  const length = Math.floor(rate * seconds);
+  const buffer = a.createBuffer(2, length, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
+  }
+  const conv = a.createConvolver();
+  conv.buffer = buffer;
+  return conv;
+}
 
 function audio(): AudioContext | null {
   if (!storage.getSettings().sound) return null;
   try {
     if (!ctx) {
       ctx = new AudioContext();
-      // Sortie : un filtre qui adoucit les aigus, plus un petit écho.
-      const master = ctx.createGain();
-      master.gain.value = 0.9;
+      // Chaîne : filtre doux → (son direct + réverbération) → limiteur → haut-parleur.
       const soft = ctx.createBiquadFilter();
       soft.type = 'lowpass';
-      soft.frequency.value = 2200;
-      const delay = ctx.createDelay();
-      delay.delayTime.value = 0.27;
-      const feedbackGain = ctx.createGain();
-      feedbackGain.gain.value = 0.28;
+      soft.frequency.value = 1500;
+      soft.Q.value = 0.3;
+      const dry = ctx.createGain();
+      dry.gain.value = 0.75;
       const wet = ctx.createGain();
-      wet.gain.value = 0.22;
-      soft.connect(master);
-      soft.connect(delay);
-      delay.connect(feedbackGain).connect(delay);
-      delay.connect(wet).connect(master);
-      master.connect(ctx.destination);
-      out = soft;
+      wet.gain.value = 0.45;
+      const reverb = makeReverb(ctx, 3.2);
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -18;
+      limiter.ratio.value = 4;
+      soft.connect(dry).connect(limiter);
+      soft.connect(reverb).connect(wet).connect(limiter);
+      limiter.connect(ctx.destination);
+      input = soft;
     }
     if (ctx.state === 'suspended') void ctx.resume();
     return ctx;
@@ -46,39 +68,59 @@ function audio(): AudioContext | null {
   }
 }
 
-const vary = (v: number, amount: number) => v * (1 + (Math.random() * 2 - 1) * amount);
-
-/** Une note douce : sinus + un soupçon d'octave, attaque lente, extinction naturelle. */
-function note(freq: number, delay = 0, duration = 0.6, volume = 0.1): void {
+/** Une note douce et ronde (sinus + un peu de triangle), qui s'éteint lentement. */
+function pluck(freq: number, delay: number, volume: number, duration = 1.6): void {
   const a = audio();
-  if (!a || !out) return;
+  if (!a || !input) return;
   const t = a.currentTime + delay;
-  const gain = a.createGain();
-  gain.gain.setValueAtTime(0, t);
-  gain.gain.linearRampToValueAtTime(vary(volume, 0.2), t + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-  gain.connect(out);
-  const partials: [number, number][] = [
-    [1, 1],
-    [2, vary(0.12, 0.5)],
-  ];
-  for (const [mult, level] of partials) {
+  const env = a.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(volume, t + 0.03);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+  env.connect(input);
+  for (const [type, level] of [
+    ['sine', 1],
+    ['triangle', 0.18],
+  ] as const) {
     const osc = a.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq * mult, t);
-    osc.detune.setValueAtTime((Math.random() * 2 - 1) * 6, t);
+    osc.type = type;
+    osc.frequency.value = freq;
     const g = a.createGain();
     g.gain.value = level;
-    osc.connect(g).connect(gain);
+    osc.connect(g).connect(env);
     osc.start(t);
-    osc.stop(t + duration + 0.05);
+    osc.stop(t + duration + 0.1);
   }
 }
 
-function wander(): number {
-  step += Math.floor(Math.random() * 5) - 2; // -2 à +2
-  step = Math.max(2, Math.min(SCALE.length - 3, step));
-  return SCALE[step];
+/** Nappe : plusieurs voix légèrement désaccordées qui montent lentement puis s'éteignent. */
+function swell(midis: number[], volume: number, attack: number, release: number): void {
+  const a = audio();
+  if (!a || !input) return;
+  const t = a.currentTime;
+  const filter = a.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(300, t);
+  filter.frequency.linearRampToValueAtTime(1100, t + attack);
+  filter.frequency.linearRampToValueAtTime(400, t + attack + release);
+  const env = a.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(volume, t + attack);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + attack + release);
+  filter.connect(env).connect(input);
+  for (const m of midis) {
+    for (const detune of [-7, 7]) {
+      const osc = a.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = hz(m);
+      osc.detune.value = detune;
+      const g = a.createGain();
+      g.gain.value = 1 / (midis.length * 2);
+      osc.connect(g).connect(filter);
+      osc.start(t);
+      osc.stop(t + attack + release + 0.1);
+    }
+  }
 }
 
 function vibrate(pattern: number | number[]): void {
@@ -91,25 +133,26 @@ function vibrate(pattern: number | number[]): void {
 }
 
 export const feedback = {
-  /** Pose d'une pièce : une note, parfois accompagnée d'une seconde plus discrète. */
+  /** Pose : une note de l'accord en cours, voisine de la précédente. */
   place(cells = 1) {
-    const f = wander();
-    note(f, 0, vary(0.55, 0.2), 0.09);
-    if (cells >= 3 && Math.random() < 0.4) note(SCALE[Math.min(SCALE.length - 1, step + 2)], 0.09, 0.5, 0.04);
+    const notes = CHORDS[chord].notes;
+    step = Math.max(0, Math.min(notes.length - 1, step + (Math.random() < 0.5 ? -1 : 1)));
+    pluck(hz(notes[step]), 0, 0.09);
+    // Les grosses pièces ajoutent parfois la basse, très bas et très doux.
+    if (cells >= 3 && Math.random() < 0.35) pluck(hz(CHORDS[chord].bass + 12), 0.02, 0.05, 2.2);
     vibrate(12);
   },
-  /** Forme terminée : un petit arpège, montant ou descendant, jamais tout à fait le même. */
+  /** Forme terminée : l'accord suivant monte en nappe, avec sa basse. */
   complete() {
-    const root = Math.max(0, Math.min(SCALE.length - 5, step - 2 + Math.floor(Math.random() * 3)));
-    const notes = [0, 1, 2, 4].map((k) => SCALE[root + k]);
-    if (Math.random() < 0.4) notes.reverse();
-    const gap = vary(0.11, 0.25);
-    notes.forEach((f, k) => note(f, 0.08 + k * gap, 1.2, 0.07));
+    chord = (chord + 1) % CHORDS.length;
+    const c = CHORDS[chord];
+    swell([c.bass, c.bass + 12, ...c.notes.slice(0, 3)], 0.16, 0.9, 3.2);
+    pluck(hz(c.notes[2]), 0.35, 0.06, 2.4);
     vibrate([15, 40, 25]);
   },
   gameOver() {
-    note(SCALE[2], 0, 1.4, 0.08);
-    note(SCALE[0], 0.35, 1.8, 0.08);
+    chord = 0;
+    swell([33, 45, 52, 57, 60], 0.14, 1.4, 4);
     vibrate(40);
   },
 };

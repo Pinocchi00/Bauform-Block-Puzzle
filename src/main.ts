@@ -160,8 +160,6 @@ function renderTray() {
       : '';
     slot.classList.toggle('held', drag?.slot === i);
     slot.classList.toggle('selected', selected === i);
-    // Pièce qui ne rentre nulle part pour l'instant : affichée en pâle.
-    slot.classList.toggle('blocked', !!piece && !game.fits(piece));
   });
 }
 
@@ -604,4 +602,12 @@ $('#debug-clear').addEventListener('click', () => {
 newGame(readSeedFromUrl() ?? randomSeed());
 
 // En développement seulement : accès au jeu depuis la console, pour les tests.
-if (import.meta.env.DEV) Object.assign(window, { bauform: { get game() { return game; }, cam } });
+if (import.meta.env.DEV) {
+  const rerender = () => {
+    renderFigure();
+    renderTray();
+    renderScore();
+    fitCamera(false);
+  };
+  Object.assign(window, { bauform: { get game() { return game; }, cam, rerender, showGameOver } });
+}

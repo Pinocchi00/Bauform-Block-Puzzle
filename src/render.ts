@@ -43,9 +43,9 @@ export function figureBounds(game: Game) {
   };
 }
 
-/** Forme terminée : un aplat uni de sa couleur, sans tuiles. */
+/** Forme terminée : un aplat uni et opaque de sa couleur, sans tuiles. */
 function flatShape(shape: Shape): string {
-  return `<path fill="${shape.color}" style="mix-blend-mode:multiply" d="${polyPath(shape.outline)}"/>`;
+  return `<path fill="${shape.color}" d="${polyPath(shape.outline)}"/>`;
 }
 
 /**
@@ -62,34 +62,57 @@ function partialShape(game: Game, shape: Shape, id: string): string {
   if (!rects) return '';
   return (
     `<clipPath id="${id}">${rects}</clipPath>` +
-    `<path fill="${shape.color}" style="mix-blend-mode:multiply" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
+    `<path fill="${shape.color}" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
+  );
+}
+
+/**
+ * Les bouts de forme trop petits pour être une case (le long des arrondis et des pointes)
+ * sont peints d'avance dans la couleur de la forme : il n'y a plus de trou vide qu'on ne
+ * pourrait pas remplir, et le contour garde sa géométrie pure.
+ */
+function slivers(shape: Shape, g: number, id: string): string {
+  const h = g / 2;
+  let holes = '';
+  for (const c of shape.cells.values()) {
+    holes += `<rect x="${c.i - h}" y="${c.j - h}" width="${1 + g}" height="${1 + g}" fill="#000"/>`;
+  }
+  const b = shape.box;
+  return (
+    `<mask id="${id}" maskUnits="userSpaceOnUse" x="${b.x0 - 1}" y="${b.y0 - 1}" width="${b.x1 - b.x0 + 2}" height="${b.y1 - b.y0 + 2}">` +
+    `<path fill="#fff" d="${polyPath(shape.outline)}"/>${holes}</mask>` +
+    `<path fill="${shape.color}" mask="url(#${id})" d="${polyPath(shape.outline)}"/>`
   );
 }
 
 /**
  * La figure, en unités monde (1 = une cellule). g = gap des tuiles en unités monde.
- * Chaque forme est un calque en « multiply » : là où deux formes se superposent,
- * les couleurs se mélangent comme de l'encre.
+ * Couleurs pleines, sans transparence. Là où deux formes se chevauchent, la plus ancienne
+ * reste entière, par-dessus : la nouvelle forme vient se glisser autour d'elle.
  * @param id préfixe unique (deux figures peuvent être dans la page en même temps)
  */
 export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'): string {
   const last = game.shapes.length - 1;
   const active = game.active;
-  let out = '<g style="isolation:isolate">';
-  for (let idx = 0; idx < last; idx++) out += flatShape(game.shapes[idx]);
+  let out = '<g>';
 
   if (mode === 'play') {
-    // Forme en cours : des tuiles, pour voir les cases à remplir.
+    // Forme en cours, tout en dessous : des tuiles, pour voir les cases à remplir.
     const d = tilesPath(active, game.filled, g);
-    if (d) out += `<path fill="${active.color}" style="mix-blend-mode:multiply" d="${d}"/>`;
+    if (d) out += `<path fill="${active.color}" d="${d}"/>`;
     const empty = [...active.cells.keys()].filter((k) => !game.filled.has(k));
     out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
-    out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    out += slivers(active, g, id + '-slivers');
   } else {
     out += partialShape(game, active, id + '-last');
-    if (mode === 'end') {
-      out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
-    }
+  }
+  // Formes terminées : la plus ancienne en dernier, donc au-dessus.
+  for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
+
+  if (mode === 'play') {
+    out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  } else if (mode === 'end') {
+    out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
   }
   return out + '</g>';
 }
