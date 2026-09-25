@@ -1,6 +1,6 @@
 // Tirage des nouvelles formes : type, taille, orientation et position aléatoires.
-// En général elles chevauchent la précédente de 10 à 30 % ; parfois elles sont posées
-// à côté, séparées par un espace de 10 à 30 % de leur taille.
+// En général elles chevauchent la précédente de 10 à 20 % ; parfois elles sont posées
+// à côté, séparées par un espace de 10 à 20 % de leur taille.
 
 import {
   OVERLAP_MAX,
@@ -11,6 +11,7 @@ import {
   SHAPE_COLORS,
   SHAPE_COLOR_WEIGHTS,
   SHAPE_MAX_CELLS,
+  SHAPE_MAX_SPAN,
   SHAPE_MIN_CELLS,
 } from './config';
 import type { Rng } from './rng';
@@ -77,8 +78,14 @@ export function firstShape(rng: Rng): Shape {
   for (;;) {
     const shape = new Shape(randomSpec(rng), pickColor(rng));
     const n = shape.cells.size;
-    if (n >= 14 && n <= 30) return shape;
+    if (n >= 14 && n <= 30 && fitsSpan(shape)) return shape;
   }
+}
+
+/** Vrai si la forme ne dépasse pas SHAPE_MAX_SPAN cases en largeur et en hauteur. */
+function fitsSpan(shape: Shape): boolean {
+  const b = shape.box;
+  return b.x1 - b.x0 <= SHAPE_MAX_SPAN + 1e-9 && b.y1 - b.y0 <= SHAPE_MAX_SPAN + 1e-9;
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -110,7 +117,7 @@ export function nextShape(
     const base = new Shape(randomSpec(rng, previous.spec.kind), '');
     const cells = [...base.cells.values()];
     const n = cells.length;
-    if (n < SHAPE_MIN_CELLS || n > SHAPE_MAX_CELLS) continue;
+    if (n < SHAPE_MIN_CELLS || n > SHAPE_MAX_CELLS || !fitsSpan(base)) continue;
 
     const fitOf = (dx: number, dy: number) => {
       const box = {
@@ -120,7 +127,11 @@ export function nextShape(
         y1: Math.max(figureBox.y1, base.box.y1 + dy),
       };
       // Plus « fit » est grand, plus la figure reste grande à l'écran.
-      return Math.min(aspect / (box.x1 - box.x0), 1 / (box.y1 - box.y0));
+      const fit = Math.min(aspect / (box.x1 - box.x0), 1 / (box.y1 - box.y0));
+      // À égalité, on préfère rester dans l'axe vertical de la figure (elle grandit en hauteur).
+      const cx = (base.box.x0 + base.box.x1) / 2 + dx;
+      const drift = Math.abs(cx - (figureBox.x0 + figureBox.x1) / 2) / (figureBox.x1 - figureBox.x0 + 1);
+      return fit * (1 - 0.15 * drift);
     };
 
     // Forme espacée (si ça ne marche pas après quelques essais, on revient au chevauchement).
@@ -147,8 +158,10 @@ export function nextShape(
       }
     }
     if (!options.length) continue;
+    // On garde les positions qui laissent la figure la plus compacte, à la proportion
+    // de l'écran (elle grandit donc surtout en hauteur), et on tire au hasard parmi elles.
     options.sort((p, q) => q.fit - p.fit);
-    const best = options.slice(0, Math.max(1, Math.ceil(options.length * 0.35)));
+    const best = options.slice(0, Math.max(1, Math.ceil(options.length * 0.06)));
     const { dx, dy } = rng.pick(best);
     return new Shape({ ...base.spec, ox: dx, oy: dy }, pickColor(rng, avoidColors));
   }
@@ -159,7 +172,7 @@ type Option = { dx: number; dy: number; fit: number };
 
 /**
  * Positions où la forme est posée à côté de la précédente, sans la toucher :
- * séparée d'un espace de 10 à 30 % de sa taille (au moins une case), face à elle,
+ * séparée d'un espace de 10 à 20 % de sa taille (au moins une case), face à elle,
  * et à bonne distance de toute la figure.
  */
 function spacedOptions(

@@ -7,6 +7,7 @@ import {
   GAP_PX,
   INTERSTITIAL_EVERY_N_GAMES,
   MAX_CELL_PX,
+  VIEW_CELLS,
 } from './config';
 import { feedback } from './feedback';
 import { Game, type Piece } from './game';
@@ -80,7 +81,8 @@ function setScreen(s: Screen) {
 }
 
 // ---------- Caméra ----------
-// À l'écran : x = x_monde * s + tx. La caméra recule pour garder toute la figure visible.
+// À l'écran : x = x_monde * s + tx. La caméra suit la forme à remplir, toujours au même
+// zoom : la 7e forme s'affiche comme la 1re. La figure entière ne se voit qu'à la fin.
 
 const cam = { s: 40, tx: 0, ty: 0 };
 let camAnim = 0;
@@ -98,10 +100,11 @@ function viewport() {
 
 function cameraTarget() {
   const v = viewport();
-  const b = game.figureBox;
+  const b = game.active.box;
   const bw = b.x1 - b.x0;
   const bh = b.y1 - b.y0;
-  const s = Math.min(v.w / bw, v.h / bh, MAX_CELL_PX);
+  // Même zoom pour toutes les formes (sauf si une forme ne rentre vraiment pas).
+  const s = Math.min(MAX_CELL_PX, v.w / VIEW_CELLS, v.h / VIEW_CELLS, v.w / bw, v.h / bh);
   return { s, tx: v.x + (v.w - bw * s) / 2 - b.x0 * s, ty: v.y + (v.h - bh * s) / 2 - b.y0 * s };
 }
 
@@ -204,8 +207,8 @@ function readSeedFromUrl(): number | null {
 }
 
 function newGame(seed = randomSeed()) {
-  const v = viewport();
-  game = new Game(seed, v.w / v.h);
+  // La figure finale est pensée pour l'écran entier (affiche de fin, en portrait).
+  game = new Game(seed, window.innerWidth / window.innerHeight);
   gameId = Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
   startedAt = Date.now();
   recordAtStart = storage.getRecord();

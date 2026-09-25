@@ -175,16 +175,9 @@ export class Game {
     for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.makePiece(reserved));
   }
 
-  private makePiece(reserved: Set<string>): Piece | null {
+  /** Fait grandir un groupe case par case, parmi les cases libres voisines. */
+  private growGroup(start: Cell, size: number, freeKeys: Set<string>): Cell[] {
     const shape = this.active;
-    const free = [...shape.cells.values()].filter((c) => !this.filled.has(c.key) && !reserved.has(c.key));
-    if (!free.length) return null;
-
-    const start = this.rng.pick(free);
-    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
-
-    // On fait grandir la pièce case par case, parmi les cases libres voisines.
-    const freeKeys = new Set(free.map((c) => c.key));
     const group: Cell[] = [start];
     const inGroup = new Set([start.key]);
     while (group.length < size) {
@@ -199,6 +192,42 @@ export class Game {
       const next = this.rng.pick(frontier);
       group.push(next);
       inGroup.add(next.key);
+    }
+    return group;
+  }
+
+  private makePiece(reserved: Set<string>): Piece | null {
+    const shape = this.active;
+    const free = [...shape.cells.values()].filter((c) => !this.filled.has(c.key) && !reserved.has(c.key));
+    if (!free.length) return null;
+
+    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+    const freeKeys = new Set(free.map((c) => c.key));
+    const neighbours = (c: Cell) =>
+      DIRS.filter(([di, dj]) => freeKeys.has(cellKey(c.i + di, c.j + dj))).length;
+
+    // Point de départ : de préférence un cul-de-sac (une seule case libre voisine),
+    // pour éviter de laisser des cases isolées qui ne pourraient recevoir qu'un cube seul.
+    // Une case déjà isolée n'est prise que s'il n'y a rien d'autre.
+    const connected = free.filter((c) => neighbours(c) > 0);
+    const starts = connected.length ? connected : free;
+    const weights = starts.map((c) => (neighbours(c) === 1 ? 3 : 1));
+
+    // Plusieurs essais : on garde le groupe le plus proche de la taille voulue et qui,
+    // une fois retiré, laisse le moins de cases isolées (futurs cubes seuls).
+    let group: Cell[] = [];
+    let bestScore = Infinity;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const g = this.growGroup(starts[this.rng.weighted(weights)], size, freeKeys);
+      const taken = new Set(g.map((c) => c.key));
+      const isolated = free.filter(
+        (c) => !taken.has(c.key) && DIRS.every(([di, dj]) => {
+          const k = cellKey(c.i + di, c.j + dj);
+          return !freeKeys.has(k) || taken.has(k);
+        }),
+      ).length;
+      const score = (size - g.length) * 10 + isolated * 3;
+      if (score < bestScore) [group, bestScore] = [g, score];
     }
     for (const c of group) reserved.add(c.key);
 
