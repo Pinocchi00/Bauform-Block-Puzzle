@@ -55,17 +55,23 @@ export const PIECE_SIZE_WEIGHTS = [0.03, 0.3, 0.35, 0.32];
 
 /**
  * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main).
- * La nouvelle pièce est le plus souvent tirée des cases libres de la forme (elle rentre),
- * mais avec cette probabilité c'est une pièce au hasard, qui peut ne rentrer nulle part.
- * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
+ * La nouvelle pièce est une forme ordinaire (barre, L, T, carré…) tirée au hasard, gardée
+ * seulement si elle rentre quelque part : elle n'est pas taillée sur mesure pour un trou.
+ * On fait jusqu'à NATURAL_PIECE_TRIES essais.
  */
-export const RANDOM_REFILL_CHANCE = 0.05;
+export const NATURAL_PIECE_TRIES = 25;
 
 /**
- * Quand il ne reste que des cases isolées, probabilité que la pièce de remplacement soit
- * un cube seul pour les boucher. Sinon, c'est une pièce au hasard : laisser des trous se paie.
+ * Probabilité que la nouvelle pièce soit tirée au hasard sans vérifier qu'elle rentre.
+ * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
  */
-export const SINGLE_PIECE_CHANCE = 0.75;
+export const RANDOM_REFILL_CHANCE = 0.06;
+
+/**
+ * Quand plus aucune pièce ordinaire ne rentre (fin de forme, trous isolés), probabilité de
+ * recevoir quand même une pièce découpée dans les cases libres. Sinon, pièce au hasard.
+ */
+export const EXACT_PIECE_CHANCE = 1;
 
 /** Score. */
 export const POINTS_PER_CELL = 10;

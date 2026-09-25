@@ -393,10 +393,13 @@ function endDrag(drop: boolean) {
 
 function placePiece(slot: number, anchor: { x: number; y: number }) {
   selected = null;
-  const size = game.hand[slot]?.cells.length ?? 1;
   const res = game.place(slot, anchor.x, anchor.y);
   if (!res) return;
-  feedback.place(size);
+  // La note monte à mesure que la forme se remplit ; une forme finie joue son carillon.
+  if (!res.completed) {
+    const todo = game.active.cells.size - game.prefilled.size;
+    feedback.place((game.filled.size - game.prefilled.size) / todo);
+  }
   showGain(res.gain);
   renderScore();
   renderFigure();

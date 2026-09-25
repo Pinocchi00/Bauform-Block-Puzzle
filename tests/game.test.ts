@@ -73,11 +73,18 @@ function playCarefulGame(seed: number, maxMoves = 400) {
 }
 
 describe('partie', () => {
-  it('chaque pièce distribuée rentre dans la forme au moment où elle arrive', () => {
-    for (let seed = 1; seed <= 30; seed++) {
+  it('les pièces distribuées rentrent presque toujours au moment où elles arrivent', () => {
+    let fit = 0;
+    let total = 0;
+    for (let seed = 1; seed <= 60; seed++) {
       const game = new Game(seed);
-      for (const p of game.hand) if (p) expect(game.fits(p)).toBe(true);
+      for (const p of game.hand) {
+        total++;
+        if (p && game.fits(p)) fit++;
+      }
     }
+    // Seule une petite part est tirée au hasard sans vérification (c'est ce qui permet de perdre).
+    expect(fit / total).toBeGreaterThan(0.85);
   });
 
   it('il y a toujours 3 pièces en main', () => {

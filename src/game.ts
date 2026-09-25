@@ -2,8 +2,9 @@
 
 import {
   BONUS_PER_SHAPE_CELL,
+  EXACT_PIECE_CHANCE,
+  NATURAL_PIECE_TRIES,
   RANDOM_REFILL_CHANCE,
-  SINGLE_PIECE_CHANCE,
   PIECE_SIZE_WEIGHTS,
   POINTS_PER_CELL,
 } from './config';
@@ -178,26 +179,52 @@ export class Game {
   }
 
   /**
-   * Pièce de remplacement. Le plus souvent, elle est tirée des cases libres (elle rentre).
-   * Parfois (RANDOM_REFILL_CHANCE), c'est une pièce au hasard qui peut ne rentrer nulle part :
-   * sans cette part de hasard, la pièce qui arrive rentrerait toujours et on ne pourrait
-   * jamais perdre. Il faut donc garder de la place pour les pièces qui viennent.
+   * Pièce de remplacement. Le plus souvent, une pièce ordinaire (barre, L, T, carré…) tirée
+   * au hasard et gardée seulement si elle rentre quelque part : elle n'est pas taillée sur
+   * mesure pour un trou, la distribution paraît naturelle. De temps en temps, une pièce au
+   * hasard sans vérifier qu'elle rentre : c'est ce qui rend la défaite possible.
    */
   private refillPiece(): Piece {
-    if (this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece();
-    // On évite les cases d'où viennent les autres pièces en main (pas deux fois la même pièce),
-    // tant que ces pièces peuvent encore y aller (leurs cases d'origine sont toutes libres).
-    const reserved = new Set(
-      this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
-    );
-    // Un cube seul ne sert qu'à boucher un trou isolé : il n'arrive qu'exceptionnellement.
-    // Laisser des trous se paie donc : il faut poser ses pièces proprement.
-    const single = this.rng.chance(SINGLE_PIECE_CHANCE) ? this.makePiece(reserved, true) : null;
-    return this.makePiece(reserved, false) ?? single ?? this.randomPiece();
+    if (this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(false);
+    // On préfère une pièce qui peut se poser sans laisser de case isolée (elle reste une
+    // forme banale, mais le jeu reste juste) ; à défaut, n'importe quelle pièce qui rentre.
+    let fallback: Piece | null = null;
+    for (let t = 0; t < NATURAL_PIECE_TRIES; t++) {
+      const p = this.randomPiece(false);
+      const anchors = this.anchors(p);
+      if (!anchors.length) continue;
+      if (anchors.some((a) => this.isolatedAfter(p, a.x, a.y) === 0)) return p;
+      fallback ??= p;
+    }
+    if (fallback) return fallback;
+    // Aucune pièce ordinaire ne rentre (fin de forme, trous) : parfois, une pièce découpée
+    // dans les cases libres ; sinon une pièce au hasard, qui ne rentrera peut-être pas.
+    if (this.rng.chance(EXACT_PIECE_CHANCE)) {
+      const reserved = new Set(
+        this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
+      );
+      const exact = this.makePiece(reserved, true) ?? this.makePiece(new Set(), true);
+      if (exact) return exact;
+    }
+    return this.randomPiece(false);
   }
 
-  private randomPiece(): Piece {
-    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+  /** Nombre de cases libres qui resteraient isolées (sans voisine libre) après cette pose. */
+  private isolatedAfter(piece: Piece, ax: number, ay: number): number {
+    const taken = new Set(piece.cells.map((c) => cellKey(ax + c.dx, ay + c.dy)));
+    const free = (k: string) => this.active.cells.has(k) && !this.filled.has(k) && !taken.has(k);
+    let n = 0;
+    for (const c of this.active.cells.values()) {
+      if (!free(c.key)) continue;
+      if (DIRS.every(([di, dj]) => !free(cellKey(c.i + di, c.j + dj)))) n++;
+    }
+    return n;
+  }
+
+  /** Pièce au hasard (1 à 4 cases, ou 2 à 4 sans cube seul), sans lien avec les cases libres. */
+  private randomPiece(allowSingle: boolean): Piece {
+    const drawn = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+    const size = allowSingle ? drawn : Math.max(2, drawn);
     const cells = [{ dx: 0, dy: 0 }];
     const has = (x: number, y: number) => cells.some((c) => c.dx === x && c.dy === y);
     while (cells.length < size) {
@@ -230,13 +257,10 @@ export class Game {
    * où elles arrivent, les 3 pièces rentrent ensemble.
    */
   private dealHand(): void {
-    const reserved = new Set<string>();
     this.hand = [];
-    // Les 3 pièces viennent de cases différentes si possible ; sinon elles peuvent se recouper.
-    for (let s = 0; s < HAND_SIZE; s++) {
-      this.hand.push(this.makePiece(reserved, false) ?? this.makePiece(reserved, true) ?? this.randomPiece());
-    }
+    for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.refillPiece());
   }
+
 
   /** Fait grandir un groupe case par case, parmi les cases libres voisines. */
   private growGroup(start: Cell, size: number, freeKeys: Set<string>): Cell[] {
