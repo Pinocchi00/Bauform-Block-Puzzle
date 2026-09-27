@@ -121,7 +121,7 @@ describe('partie', () => {
     expect(a.moves).toBe(b.moves);
   });
 
-  it('les nouvelles formes se collent ou chevauchent, jamais sur un arrondi ou une diagonale', () => {
+  it('les nouvelles formes chevauchent la précédente de 10 à 20 %, ou se collent contre elle', () => {
     let adjacent = 0;
     let overlapping = 0;
     for (let seed = 1; seed <= 20; seed++) {
@@ -142,23 +142,25 @@ describe('partie', () => {
           x1: Math.max(box.x1, cur.box.x1),
           y1: Math.max(box.y1, cur.box.y1),
         };
-        const shared = [...cur.touched].filter(([key]) => touched.has(key));
-        if (shared.length === 0) {
+        const onPrev = [...cur.cells.keys()].filter((key) => prev.cells.has(key)).length;
+        const shared = [...cur.touched.keys()].filter((key) => touched.has(key)).length;
+        if (shared === 0) {
           adjacent++;
+          // Collée : les rectangles englobants se touchent.
+          const gx = Math.max(prev.box.x0 - cur.box.x1, cur.box.x0 - prev.box.x1);
+          const gy = Math.max(prev.box.y0 - cur.box.y1, cur.box.y0 - prev.box.y1);
+          expect(Math.max(gx, gy)).toBeLessThanOrEqual(1e-9);
         } else {
           overlapping++;
-          // Zone commune : uniquement des cases pleines pour les deux formes.
-          for (const [key, a] of shared) {
-            expect(a).toBeCloseTo(1);
-            expect(touched.get(key)).toBeCloseTo(1);
-          }
-          expect(shared.length / cur.cells.size).toBeLessThanOrEqual(0.25);
+          expect(onPrev / cur.cells.size).toBeGreaterThanOrEqual(0.1 - 1e-9);
+          expect(onPrev / cur.cells.size).toBeLessThanOrEqual(0.2 + 1e-9);
         }
       }
     }
     expect(adjacent).toBeGreaterThan(0);
-    expect(overlapping).toBeGreaterThan(0);
+    expect(overlapping).toBeGreaterThan(adjacent);
   });
+
 
 
   it('réessayer la forme remet la forme active à son début', () => {

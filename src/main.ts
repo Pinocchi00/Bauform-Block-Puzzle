@@ -16,7 +16,6 @@ import {
   decorMarkup,
   figureBounds,
   figureMarkup,
-  oldColorAt,
   pieceMarkup,
   posterLinesMarkup,
   previewMarkup,
@@ -182,7 +181,7 @@ function renderDecor() {
 
 /**
  * Dessine la figure entière dans un SVG (écran de fin, plein écran), comme une affiche :
- * les traits fins, propres à chaque partie, passent derrière les formes.
+ * les traits, propres à chaque partie, passent par-dessus les formes.
  */
 function drawFigureInto(svg: SVGSVGElement, mode: FigureMode, pad: number) {
   const r = svg.getBoundingClientRect();
@@ -195,8 +194,8 @@ function drawFigureInto(svg: SVGSVGElement, mode: FigureMode, pad: number) {
   const lines = posterLinesMarkup(game, new Rng(game.seed ^ 0x27d4eb2f));
   svg.innerHTML =
     `<g transform="translate(${tx} ${ty}) scale(${s})">` +
-    lines +
     figureMarkup(game, GAP_PX / s, mode, svg.id) +
+    lines +
     '</g>';
 }
 
@@ -375,7 +374,7 @@ function moveDrag(px: number, py: number) {
   if (same || (!best && !drag.anchor)) return;
   drag.anchor = best;
   previewEl.innerHTML = best
-    ? previewMarkup(piece, best.x, best.y, GAP_PX / figureScale, (k) => oldColorAt(game, k) !== null)
+    ? previewMarkup(piece, best.x, best.y, GAP_PX / figureScale)
     : '';
 }
 

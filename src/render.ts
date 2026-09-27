@@ -43,9 +43,13 @@ export function figureBounds(game: Game) {
   };
 }
 
-/** Forme terminée : un aplat uni et opaque de sa couleur, sans tuiles. */
+/**
+ * Forme terminée : un aplat uni de sa couleur. Entre elles, les formes terminées se
+ * superposent comme de l'encre (« multiply ») : là où elles se chevauchent, les couleurs
+ * se mélangent, comme sur les affiches.
+ */
 function flatShape(shape: Shape): string {
-  return `<path fill="${shape.color}" d="${polyPath(shape.outline)}"/>`;
+  return `<path fill="${shape.color}" style="mix-blend-mode:multiply" d="${polyPath(shape.outline)}"/>`;
 }
 
 /**
@@ -65,91 +69,68 @@ function cellsFlat(shape: Shape, keys: Iterable<string>, color: string, id: stri
   if (!rects) return '';
   return (
     `<clipPath id="${id}">${rects}</clipPath>` +
-    `<path fill="${color}" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
+    `<path fill="${color}" style="mix-blend-mode:multiply" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
   );
-}
-
-/** Couleur de la plus ancienne forme terminée qui couvre cette case, s'il y en a une. */
-export function oldColorAt(game: Game, key: string): string | null {
-  const old = game.shapes.slice(0, -1).find((s) => s.cells.has(key));
-  return old ? old.color : null;
-}
-
-/**
- * Cases de la forme active déjà couvertes par une ancienne forme, regroupées par couleur.
- * Elles prennent la couleur de cette ancienne forme : là où elle chevauche la nouvelle,
- * elle entre proprement dans sa grille, sans bouts d'une autre couleur qui dépassent.
- */
-function prefilledByColor(game: Game): Map<string, string[]> {
-  const groups = new Map<string, string[]>();
-  for (const key of game.prefilled) {
-    const color = game.coverColor(key);
-    groups.set(color, [...(groups.get(color) ?? []), key]);
-  }
-  return groups;
 }
 
 /**
  * La figure, en unités monde (1 = une cellule). g = gap des tuiles en unités monde.
- * Couleurs pleines, sans transparence. Là où deux formes se chevauchent, la plus ancienne
- * reste entière, par-dessus : la nouvelle forme vient se glisser autour d'elle.
+ *
+ * En jeu, la forme en cours est une grille de tuiles opaques et nettes : crème si la case est
+ * vide, couleur de la forme si elle est remplie (la zone qui chevauche la figure compte déjà
+ * comme remplie). Les formes terminées sont masquées à l'intérieur : aucune autre forme ne
+ * vient dessiner une courbe ou un escalier dans la grille, et rien de ce qu'on pose ne paraît
+ * transparent. Une fois la forme finie, elle devient un aplat et les chevauchements
+ * apparaissent dans leur vraie géométrie, les couleurs mêlées comme de l'encre.
  * @param id préfixe unique (deux figures peuvent être dans la page en même temps)
  */
 export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'): string {
   const last = game.shapes.length - 1;
   const active = game.active;
-  let out = '<g>';
+  let done = '<g style="isolation:isolate">';
+  for (let idx = 0; idx < last; idx++) done += flatShape(game.shapes[idx]);
 
-  const placed = [...game.filled].filter((k) => !game.prefilled.has(k));
-  const covered = prefilledByColor(game);
-  if (mode === 'play') {
-    // Forme en cours : des tuiles, toutes séparées par le même joint. Chaque case prend la
-    // couleur de son état : crème si elle est vide, couleur de la forme si elle est remplie,
-    // couleur de l'ancienne forme si elle la recouvre (elle se cale sur la grille, sans courbe
-    // ni diagonale d'une autre forme qui coupe une case). Les petits bouts suivent leur case,
-    // sauf s'ils sont recouverts par une ancienne forme : ils en prennent alors la couleur.
-    const groups = new Map<string, string[]>();
-    const add = (color: string, key: string) => groups.set(color, [...(groups.get(color) ?? []), key]);
-    for (const c of active.cells.values()) {
-      const color = game.prefilled.has(c.key)
-        ? game.coverColor(c.key)
-        : game.filled.has(c.key)
-          ? active.color
-          : COLORS.shapeInside;
-      add(color, c.key);
-      for (const b of active.absorbed.get(c.key) ?? []) {
-        const k = cellKey(b.i, b.j);
-        add(oldColorAt(game, k) ?? color, k);
-      }
+  if (mode !== 'play') {
+    // Affiche : les formes terminées, puis ce qui a été rempli de la dernière forme.
+    done += cellsFlat(active, game.filled, active.color, id + '-last');
+    done += '</g>';
+    if (mode === 'end') {
+      done += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
     }
-    for (const [color, keys] of groups) out += `<path fill="${color}" d="${tilesPath(active, keys, g)}"/>`;
-    // Formes terminées (la plus ancienne au-dessus), masquées à l'intérieur de la forme en cours.
-    const b = figureBounds(game);
-    const m = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 10;
-    out +=
-      `<mask id="${id}-hole" maskUnits="userSpaceOnUse" x="${b.x0 - m}" y="${b.y0 - m}" width="${b.x1 - b.x0 + 2 * m}" height="${b.y1 - b.y0 + 2 * m}">` +
-      `<rect x="${b.x0 - m}" y="${b.y0 - m}" width="${b.x1 - b.x0 + 2 * m}" height="${b.y1 - b.y0 + 2 * m}" fill="#fff"/>` +
-      `<path d="${polyPath(active.outline)}" fill="#000"/></mask><g mask="url(#${id}-hole)">`;
-    for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
-    out += '</g>';
-  } else {
-    out += cellsFlat(active, placed, active.color, id + '-last');
-    let n = 0;
-    for (const [color, keys] of covered) out += cellsFlat(active, keys, color, `${id}-cover${n++}`);
-    // Formes terminées : la plus ancienne en dernier, donc au-dessus.
-    for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
+    return `<g>${done}</g>`;
   }
+  done += '</g>';
 
-  if (mode === 'play') {
-    out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-  } else if (mode === 'end') {
-    out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
+  // Tuiles de la forme en cours, regroupées par couleur. Les petits bouts le long des arrondis
+  // sont de petites tuiles à part qui suivent l'état de leur case.
+  const filled: string[] = [];
+  const empty: string[] = [];
+  for (const c of active.cells.values()) {
+    const list = game.filled.has(c.key) ? filled : empty;
+    list.push(c.key);
+    for (const b of active.absorbed.get(c.key) ?? []) list.push(cellKey(b.i, b.j));
   }
+  let out = '<g>';
+  if (filled.length) out += `<path fill="${active.color}" d="${tilesPath(active, filled, g)}"/>`;
+  out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
+  // Formes terminées, masquées à l'intérieur de la forme en cours.
+  const b = figureBounds(game);
+  const m = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 10;
+  const [x, y, w, h] = [b.x0 - m, b.y0 - m, b.x1 - b.x0 + 2 * m, b.y1 - b.y0 + 2 * m];
+  out +=
+    `<mask id="${id}-hole" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}">` +
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>` +
+    `<path d="${polyPath(active.outline)}" fill="#000"/></mask>` +
+    `<g mask="url(#${id}-hole)">${done}</g>`;
+  out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
   return out + '</g>';
 }
 
 /**
- * Traits fins de l'affiche de fin, en unités monde, calés sur les bords des formes.
+ * Traits de l'affiche de fin, en unités monde, calés sur les bords des formes et posés
+ * par-dessus, comme sur les affiches du Bauhaus : un axe vertical épais qui traverse la
+ * composition, une horizontale, et selon la partie une seconde verticale fine, un faisceau
+ * de trois lignes parallèles, un rectangle en simple contour, un grand arc de cercle.
  * Tirés au hasard à partir de la seed : chaque partie donne une composition différente.
  */
 export function posterLinesMarkup(game: Game, rng: Rng): string {
@@ -157,32 +138,55 @@ export function posterLinesMarkup(game: Game, rng: Rng): string {
   const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
   const far = size * 20;
   const r = (a: number, c: number) => a + rng.next() * (c - a);
-  const shapeEdge = (axis: 'x' | 'y') => {
-    const s = rng.pick(game.shapes).box;
-    return axis === 'x' ? rng.pick([s.x0, s.x1]) : rng.pick([s.y0, s.y1]);
+  const boxes = game.shapes.map((s) => s.box);
+  const cx = (b.x0 + b.x1) / 2;
+  const cy = (b.y0 + b.y1) / 2;
+  // Bord de forme le plus proche d'une position voulue (les traits s'appuient sur les formes).
+  const edgeNear = (axis: 'x' | 'y', target: number) => {
+    const edges = boxes.flatMap((s) => (axis === 'x' ? [s.x0, s.x1] : [s.y0, s.y1]));
+    return edges.reduce((best, e) => (Math.abs(e - target) < Math.abs(best - target) ? e : best));
   };
-  const line = (x1: number, y1: number, x2: number, y2: number) =>
-    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" vector-effect="non-scaling-stroke"/>`;
+  const line = (x1: number, y1: number, x2: number, y2: number, width: number) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${width}" vector-effect="non-scaling-stroke"/>`;
 
-  let out = `<g stroke="${COLORS.black}" stroke-width="1" fill="none">`;
-  // Une verticale et une horizontale qui traversent toute l'affiche.
-  const vx = shapeEdge('x');
-  out += line(vx, -far, vx, far);
-  const hy = shapeEdge('y');
-  out += line(-far, hy, far, hy);
-  // Un trait qui part de la figure et file vers un bord.
-  if (rng.chance(0.7)) {
-    const y = shapeEdge('y');
-    out += rng.chance(0.5) ? line(b.x0 - r(1, 3), y, far, y) : line(-far, y, b.x1 + r(1, 3), y);
-  } else {
-    const x = shapeEdge('x');
-    out += rng.chance(0.5) ? line(x, b.y0 - r(1, 3), x, far) : line(x, -far, x, b.y1 + r(1, 3));
+  let out = `<g stroke="${COLORS.black}" fill="none" stroke-linecap="butt">`;
+  // L'axe : une verticale épaisse près du centre, qui dépasse la figure en haut et en bas
+  // (ou traverse toute l'affiche).
+  const ax = edgeNear('x', cx + (b.x1 - b.x0) * r(-0.2, 0.2));
+  const through = rng.chance(0.5);
+  out += line(ax, through ? -far : b.y0 - r(1, 3), ax, through ? far : b.y1 + r(1, 3), 3);
+  // Une seconde verticale fine, tout près ou ailleurs.
+  if (rng.chance(0.5)) {
+    const x2 = edgeNear('x', ax + (rng.chance(0.5) ? -1 : 1) * r(1, 4));
+    if (Math.abs(x2 - ax) > 0.5) out += line(x2, -far, x2, far, 1);
   }
-  // Un grand cercle, centré sur un coin d'une forme.
-  const s = rng.pick(game.shapes).box;
-  const cx = rng.pick([s.x0, s.x1]);
-  const cy = rng.pick([s.y0, s.y1]);
-  out += `<circle cx="${cx}" cy="${cy}" r="${size * r(0.35, 0.65)}" vector-effect="non-scaling-stroke"/>`;
+  // Une horizontale, qui part d'une forme et file d'un côté (ou traverse tout).
+  const hy = edgeNear('y', cy + (b.y1 - b.y0) * r(-0.3, 0.3));
+  if (rng.chance(0.5)) out += line(-far, hy, far, hy, 1.5);
+  else out += rng.chance(0.5) ? line(ax, hy, b.x1 + r(1, 3), hy, 2.5) : line(b.x0 - r(1, 3), hy, ax, hy, 2.5);
+  // Un faisceau de trois lignes parallèles, qui sort de la figure sur un côté.
+  if (rng.chance(0.5)) {
+    const s = rng.pick(boxes);
+    const y0 = s.y0 + (s.y1 - s.y0) * r(0.2, 0.7);
+    const left = rng.chance(0.5);
+    const from = left ? b.x0 - r(1.5, 3) : s.x1;
+    const to = left ? s.x0 : b.x1 + r(1.5, 3);
+    for (let k = 0; k < 3; k++) out += line(from, y0 + k * 0.45, to, y0 + k * 0.45, 2);
+  }
+  // Un rectangle en simple contour, accroché au coin d'une forme.
+  if (rng.chance(0.35)) {
+    const s = rng.pick(boxes);
+    const w = r(2, 4);
+    const h = r(1.5, 3);
+    const x = rng.chance(0.5) ? s.x1 : s.x0 - w;
+    const y = rng.chance(0.5) ? s.y1 : s.y0 - h;
+    out += `<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  }
+  // Un grand arc de cercle fin, centré sur un coin de forme.
+  if (rng.chance(0.55)) {
+    const s = rng.pick(boxes);
+    out += `<circle cx="${rng.pick([s.x0, s.x1])}" cy="${rng.pick([s.y0, s.y1])}" r="${size * r(0.35, 0.6)}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  }
   return out + '</g>';
 }
 
@@ -200,13 +204,7 @@ export function pieceMarkup(piece: Piece, cellPx: number): string {
 }
 
 /** Aperçu aimanté : teinte légère + contour en pointillés, en unités monde. */
-export function previewMarkup(
-  piece: Piece,
-  ax: number,
-  ay: number,
-  g: number,
-  covered?: (key: string) => boolean,
-): string {
+export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): string {
   const shape = piece.shape;
   const inPiece = new Set(piece.cells.map((c) => cellKey(ax + c.dx, ay + c.dy)));
   let tiles = '';
@@ -216,10 +214,8 @@ export function previewMarkup(
     const i = ax + c.dx;
     const j = ay + c.dy;
     tiles += polyPath(shape.tile(i, j, g));
-    // Les petits bouts suivent la case, sauf ceux recouverts par une autre forme.
-    for (const b of shape.absorbed.get(cellKey(i, j)) ?? []) {
-      if (!covered?.(cellKey(b.i, b.j))) tiles += polyPath(shape.tile(b.i, b.j, g));
-    }
+    // Les petits bouts suivent leur case.
+    for (const b of shape.absorbed.get(cellKey(i, j)) ?? []) tiles += polyPath(shape.tile(b.i, b.j, g));
     // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce.
     const poly = shape.piece(i, j);
     for (let k = 0; k < poly.length; k++) {

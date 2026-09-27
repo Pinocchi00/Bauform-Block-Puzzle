@@ -155,20 +155,6 @@ export class Game {
     this.dealHand();
   }
 
-  /**
-   * Couleur d'une case de la forme active déjà couverte par la figure : celle de la plus
-   * ancienne forme qui la couvre (c'est elle qui est dessinée par-dessus).
-   */
-  coverColor(key: string): string {
-    const old = this.shapes.slice(0, -1).find((s) => s.cells.has(key));
-    return old ? old.color : this.active.color;
-  }
-
-  /** Liste des formes avec leurs cellules remplies, pour l'affichage. */
-  filledCells(index: number): Iterable<string> {
-    return index === this.shapes.length - 1 ? this.filled : this.shapes[index].cells.keys();
-  }
-
   private startNextShape(): void {
     const done = this.active;
     for (const key of done.cells.keys()) this.figure.add(key);
@@ -194,7 +180,7 @@ export class Game {
 
   /**
    * Pièce de remplacement, tirée comme dans un vrai jeu de pièces :
-   *  1. on tire sa taille (1 à 4 cases, le cube seul arrive environ 1 fois sur 10, à tout moment) ;
+   *  1. on tire sa taille (1 à 4 cases ; le cube seul peut arriver à tout moment, rarement) ;
    *  2. on tire une pièce ordinaire de cette taille (barre, L, T, carré…), gardée si elle rentre
    *     quelque part, de préférence sans laisser de case isolée ;
    *  3. si aucune pièce de cette taille ne rentre et qu'une autre pièce en main rentre encore,
@@ -272,16 +258,11 @@ export class Game {
     };
   }
 
-  /**
-   * Distribue 3 pièces neuves (début de forme, ou « réessayer la forme »). Chacune est tirée
-   * d'un groupe de cellules libres de la forme, si possible sans se chevaucher : au moment
-   * où elles arrivent, les 3 pièces rentrent ensemble.
-   */
+  /** Distribue 3 pièces neuves (début de forme, ou « réessayer la forme »). */
   private dealHand(): void {
     this.hand = [];
     for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.refillPiece());
   }
-
 
   /** Fait grandir un groupe case par case, parmi les cases libres voisines. */
   private growGroup(start: Cell, size: number, freeKeys: Set<string>): Cell[] {
@@ -305,9 +286,8 @@ export class Game {
   }
 
   /**
-   * Pièce tirée d'un groupe de cases libres (hors cases réservées).
-   * Les pièces partent de préférence des bords de la forme (pointes, arrondis, rebords)
-   * et des culs-de-sac, pour que les bords se remplissent avec de vraies pièces.
+   * Pièce découpée dans un groupe de cases libres (hors cases réservées), en dernier recours
+   * quand plus rien ne rentre. Elle part de préférence d'un bord ou d'un cul-de-sac.
    * @param allowSingle accepte un cube seul ; sinon renvoie null s'il n'y a que des cases isolées
    */
   private makePiece(reserved: Set<string>, allowSingle: boolean): Piece | null {

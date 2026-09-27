@@ -36,17 +36,17 @@ export const SHAPE_MAX_CELLS = 36;
 export const SHAPE_MAX_SPAN = 8;
 
 /**
- * Part de la nouvelle forme qui chevauche la précédente (en cases). Le chevauchement ne se
- * fait que sur des cases pleines des deux formes : jamais sur un arrondi ni une diagonale.
+ * Part de la nouvelle forme qui chevauche la précédente (en cases). Cette zone compte comme
+ * déjà remplie. À la fin, les formes s'y mêlent comme de l'encre.
  */
-export const OVERLAP_MIN = 0.05;
-export const OVERLAP_MAX = 0.15;
+export const OVERLAP_MIN = 0.1;
+export const OVERLAP_MAX = 0.2;
 
 /**
  * Probabilité qu'une nouvelle forme vienne se coller contre la précédente (bord contre bord,
  * sans espace), plutôt que de la chevaucher. Donne une figure serrée, comme une affiche.
  */
-export const ADJACENT_SHAPE_CHANCE = 0.5;
+export const ADJACENT_SHAPE_CHANCE = 0.35;
 
 /**
  * Probabilité de tirer une pièce de 1, 2, 3 ou 4 cellules.

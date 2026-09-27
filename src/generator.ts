@@ -1,5 +1,5 @@
 // Tirage des nouvelles formes : type, taille, orientation et position aléatoires.
-// Elles se collent contre la précédente, ou la chevauchent un peu sur des parties droites.
+// Elles chevauchent un peu la précédente, ou se collent contre elle : une figure serrée.
 
 import {
   OVERLAP_MAX,
@@ -89,10 +89,9 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
 
 /**
  * Forme suivante. Deux façons de la poser, comme sur une affiche Bauhaus :
- *  - collée contre la précédente (bord contre bord, sans espace ni chevauchement) ;
- *  - ou en chevauchant la précédente de 5 à 15 %, mais seulement sur des cases pleines des
- *    deux formes : jamais sur un arrondi ou une diagonale, qu'on ne peut pas découper en
- *    carrés sans que ça se voie.
+ *  - en chevauchant la précédente de 10 à 20 % (arrondis compris : pendant la partie, la
+ *    forme en cours cache les autres, et à la fin le chevauchement garde sa vraie géométrie) ;
+ *  - ou collée contre la précédente, bord contre bord, sans espace.
  * Parmi les positions possibles, on garde celles qui laissent la figure la plus compacte
  * (à la proportion de l'écran, elle grandit donc surtout en hauteur).
  *
@@ -151,15 +150,14 @@ export function nextShape(
 
 type Option = { dx: number; dy: number; fit: number };
 
-const FULL = 1 - 1e-6;
 const keyOf = (k: string, dx: number, dy: number) => {
   const [i, j] = k.split(',').map(Number);
   return cellKey(i + dx, j + dy);
 };
 
 /**
- * Positions où la forme chevauche la précédente de 5 à 15 % de ses cases, uniquement sur
- * des cases pleines des deux côtés (aucun arrondi ni diagonale dans la zone commune).
+ * Positions où la forme chevauche la précédente de 10 à 20 % de ses cases, sans être
+ * recouverte à plus de ~30 % par l'ensemble de la figure (chevauchement tel qu'on le voit).
  */
 function overlapOptions(
   base: Shape,
@@ -174,27 +172,19 @@ function overlapOptions(
   const options: Option[] = [];
   for (let dy = Math.floor(pb.y0 - bb.y1); dy <= Math.ceil(pb.y1 - bb.y0); dy++) {
     for (let dx = Math.floor(pb.x0 - bb.x1); dx <= Math.ceil(pb.x1 - bb.x0); dx++) {
-      let shared = 0;
       let onPrevious = 0;
-      let clean = true;
-      for (const [k, a] of base.touched) {
-        const other = touched.get(keyOf(k, dx, dy));
-        if (other === undefined) continue;
-        // Case commune : elle doit être pleine pour la nouvelle forme et pour la figure.
-        if (a < FULL || other < FULL) {
-          clean = false;
-          break;
-        }
-        shared++;
-        if (previous.cells.has(keyOf(k, dx, dy))) onPrevious++;
+      let onFigure = 0;
+      for (const k of base.cells.keys()) {
+        const moved = keyOf(k, dx, dy);
+        if (previous.cells.has(moved)) onPrevious++;
+        if (figure.has(moved)) onFigure++;
       }
-      if (!clean || shared === 0) continue;
       const ratio = onPrevious / n;
       if (ratio < OVERLAP_MIN || ratio > OVERLAP_MAX) continue;
-      if (shared / n > OVERLAP_MAX + 0.05) continue;
-      let onFigure = 0;
-      for (const k of base.cells.keys()) if (figure.has(keyOf(k, dx, dy))) onFigure++;
       if (n - onFigure < MIN_FREE_CELLS) continue;
+      let visible = 0;
+      for (const k of base.touched.keys()) if (touched.has(keyOf(k, dx, dy))) visible++;
+      if (visible / base.touched.size > OVERLAP_MAX + 0.1) continue;
       options.push({ dx, dy, fit: fitOf(dx, dy) });
     }
   }
