@@ -98,6 +98,7 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
  * @param avoidColors couleurs des dernières formes, à ne pas reprendre
  * @param figure cellules déjà couvertes par la figure
  * @param figureBox rectangle qui englobe la figure
+ * @param touched cases touchées par la figure, même d'un petit bout (chevauchement visible)
  * @param aspect largeur / hauteur de la zone de jeu à l'écran
  */
 export function nextShape(
@@ -107,13 +108,16 @@ export function nextShape(
   figure: Set<string>,
   figureBox: Box,
   aspect: number,
+  touched: Set<string> = figure,
 ): Shape {
   const spaced = rng.chance(SPACED_SHAPE_CHANCE);
   for (let attempt = 0; attempt < 300; attempt++) {
     // Si rien ne convient, on relâche peu à peu les contraintes.
     const phase = Math.floor(attempt / 100);
     const slack = phase === 0 ? 0 : 0.1;
-    const figureMax = phase === 0 ? OVERLAP_MAX + 0.1 : 0.5;
+    const figureMax = phase === 0 ? OVERLAP_MAX + 0.05 : 0.5;
+    // Chevauchement tel qu'on le voit (tous les bouts de forme, pas seulement les cases).
+    const visibleMax = phase === 0 ? OVERLAP_MAX + 0.1 : 1;
     const base = new Shape(randomSpec(rng, previous.spec.kind), '');
     const cells = [...base.cells.values()];
     const n = cells.length;
@@ -135,7 +139,7 @@ export function nextShape(
     };
 
     // Forme espacée (si ça ne marche pas après quelques essais, on revient au chevauchement).
-    const options: Option[] = spaced && attempt < 60 ? spacedOptions(base, previous, figure, fitOf) : [];
+    const options: Option[] = spaced && attempt < 60 ? spacedOptions(base, previous, touched, fitOf) : [];
     if (spaced && attempt < 60 && !options.length) continue;
     // En dernier recours, on accepte de se poser n'importe où sur la figure.
     const pb = phase < 2 ? previous.box : figureBox;
@@ -154,6 +158,12 @@ export function nextShape(
         if (ratio < OVERLAP_MIN - slack || ratio > OVERLAP_MAX + slack) continue;
         if (onFigure / n > figureMax) continue;
         if (n - onFigure < MIN_FREE_CELLS) continue;
+        let visible = 0;
+        for (const key of base.touched) {
+          const [i, j] = key.split(',').map(Number);
+          if (touched.has(cellKey(i + dx, j + dy))) visible++;
+        }
+        if (visible / base.touched.size > visibleMax) continue;
         options.push({ dx, dy, fit: fitOf(dx, dy) });
       }
     }
@@ -186,7 +196,11 @@ function spacedOptions(
   const size = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0);
   const gapMin = Math.max(1, Math.round(SPACING_MIN * size));
   const gapMax = Math.max(gapMin, Math.round(SPACING_MAX * size));
-  const cells = [...base.cells.values()];
+  // Toutes les cases touchées par la nouvelle forme, pour garder un vrai espace visible.
+  const cells = [...base.touched].map((k) => {
+    const [i, j] = k.split(',').map(Number);
+    return { i, j };
+  });
   const options: Option[] = [];
   for (let dy = Math.floor(pb.y0 - bb.y1 - gapMax); dy <= Math.ceil(pb.y1 - bb.y0 + gapMax); dy++) {
     for (let dx = Math.floor(pb.x0 - bb.x1 - gapMax); dx <= Math.ceil(pb.x1 - bb.x0 + gapMax); dx++) {

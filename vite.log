@@ -1,0 +1,13 @@
+
+  VITE v8.3.1  ready in 283 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+9:34:55 PM [vite] (client) page reload src/feedback.ts
+9:35:10 PM [vite] (client) page reload src/feedback.ts
+9:35:26 PM [vite] (client) page reload src/feedback.ts
+9:35:31 PM [vite] (client) page reload src/feedback.ts
+9:35:36 PM [vite] (client) page reload src/feedback.ts
+9:35:57 PM [vite] (client) page reload src/feedback.ts
+9:36:12 PM [vite] (client) page reload src/feedback.ts
+9:36:46 PM [vite] (client) page reload dist-artifact/bauform.html

@@ -23,15 +23,18 @@ interface Voice {
 }
 
 const VOICES: Record<string, Voice> = {
-  [COLORS.blue]: { base: 48, ring: 0.55, bright: 0.25 }, // do grave, profond et long
-  [COLORS.red]: { base: 53, ring: 0.4, bright: 0.45 }, // fa, chaud et plein
-  [COLORS.yellow]: { base: 55, ring: 0.3, bright: 0.7 }, // sol, vif et clair
-  [COLORS.black]: { base: 45, ring: 0.18, bright: 0.15 }, // la grave, mat, presque un silence
-  [COLORS.grey]: { base: 50, ring: 0.25, bright: 0.3 }, // ré, neutre et feutré
+  [COLORS.blue]: { base: 48, ring: 0.6, bright: 0.25 }, // do grave, profond et long
+  [COLORS.red]: { base: 52, ring: 0.45, bright: 0.4 }, // mi, chaud et plein
+  [COLORS.yellow]: { base: 50, ring: 0.35, bright: 0.25 }, // ré, clair mais doux
+  [COLORS.black]: { base: 45, ring: 0.22, bright: 0.15 }, // la grave, mat, presque un silence
+  [COLORS.grey]: { base: 47, ring: 0.3, bright: 0.18 }, // si, neutre et feutré
 };
 
-/** Pas de la gamme pentatonique (en demi-tons) : la note monte au plus d'une quinte. */
+/** Notes de la gamme pentatonique (en demi-tons au-dessus de la note de base). */
 const STEPS = [0, 2, 4, 7];
+
+/** Dernière note jouée, pour ne pas répéter la même deux fois de suite. */
+let lastStep = -1;
 
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 const voiceOf = (color: string) => VOICES[color] ?? VOICES[COLORS.red];
@@ -51,12 +54,12 @@ function audio(): AudioContext | null {
       soft.frequency.value = 3000;
       soft.Q.value = 0.5;
       const master = ctx.createGain();
-      master.gain.value = 5;
+      master.gain.value = 7;
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -4;
+      limiter.threshold.value = -3;
       limiter.knee.value = 2;
       limiter.ratio.value = 20;
-      limiter.attack.value = 0.002;
+      limiter.attack.value = 0.001;
       limiter.release.value = 0.15;
       soft.connect(master).connect(limiter).connect(ctx.destination);
       input = soft;
@@ -126,13 +129,25 @@ function vibrate(pattern: number | number[]): void {
 export const feedback = {
   /**
    * Pose d'une pièce : le toc du bois, dans la voix de la couleur de la forme.
-   * La note monte doucement (d'une quinte au plus) à mesure que la forme se remplit.
+   * La mélodie flâne sur une gamme qui sonne toujours juste, en montant doucement à mesure
+   * que la forme se remplit ; jamais deux fois la même note d'affilée, et chaque coup varie
+   * un peu (force, résonance, bois), comme un vrai bloc posé à la main.
    * @param fill part de la forme remplie après la pose (0 à 1)
    */
   place(fill: number, color: string) {
     const voice = voiceOf(color);
-    const step = STEPS[Math.min(STEPS.length - 1, Math.floor(Math.max(0, fill) * STEPS.length))];
-    block(voice.base + 24 + step, 0, 0.7, voice);
+    const center = Math.max(0, Math.min(1, fill)) * (STEPS.length - 1);
+    let step = lastStep;
+    for (let t = 0; t < 6 && step === lastStep; t++) {
+      step = Math.round(center + (Math.random() * 2.4 - 1.2));
+      step = Math.max(0, Math.min(STEPS.length - 1, step));
+    }
+    lastStep = step;
+    const vary = (v: number, amount: number) => v * (1 + (Math.random() * 2 - 1) * amount);
+    const touch = { ...voice, ring: vary(voice.ring, 0.15), bright: vary(voice.bright, 0.25) };
+    block(voice.base + 24 + STEPS[step], 0, vary(0.65, 0.1), touch);
+    // De temps en temps, le bloc « sonne » plus grave, comme posé sur un autre bloc.
+    if (Math.random() < 0.25) block(voice.base + 12 + STEPS[step], 0.01, 0.25, { ...touch, bright: 0.1 });
     vibrate(15);
   },
   /**
@@ -142,8 +157,8 @@ export const feedback = {
   complete(color: string) {
     const voice = voiceOf(color);
     const notes = [0, 4, 7, 12].map((n) => voice.base + 24 + n);
-    notes.forEach((m, k) => block(m, k * 0.09, 0.12, { ...voice, ring: voice.ring + 0.5 }));
-    block(voice.base + 12, 0.36, 0.15, { ...voice, ring: 1.2, bright: 0.1 });
+    notes.forEach((m, k) => block(m, k * 0.09, 0.1, { ...voice, ring: voice.ring + 0.5 }));
+    block(voice.base + 12, 0.36, 0.11, { ...voice, ring: 1.2, bright: 0.1 });
     vibrate([20, 60, 30]);
   },
   /** Défaite : deux blocs graves et mats, qui descendent. */

@@ -20,7 +20,7 @@ function tilePath(shape: Shape, key: string, g: number): string {
   let d = cache.get(id);
   if (d === undefined) {
     const c = shape.cells.get(key)!;
-    d = polyPath(shape.tile(c.i, c.j, g));
+    d = shape.tiles(c.i, c.j, g).map((t) => polyPath(t)).join('');
     cache.set(id, d);
   }
   return d;
@@ -57,7 +57,10 @@ function cellsFlat(shape: Shape, keys: Iterable<string>, color: string, id: stri
   let rects = '';
   for (const key of keys) {
     const c = shape.cells.get(key);
-    if (c) rects += `<rect x="${c.i - e}" y="${c.j - e}" width="${1 + 2 * e}" height="${1 + 2 * e}"/>`;
+    if (!c) continue;
+    for (const r of shape.rects(c.i, c.j)) {
+      rects += `<rect x="${r.i0 - e}" y="${r.j0 - e}" width="${r.i1 - r.i0 + 1 + 2 * e}" height="${r.j1 - r.j0 + 1 + 2 * e}"/>`;
+    }
   }
   if (!rects) return '';
   return (
@@ -81,25 +84,6 @@ function prefilledByColor(game: Game): Map<string, string[]> {
 }
 
 /**
- * Les bouts de forme trop petits pour être une case (le long des arrondis et des pointes)
- * sont peints d'avance dans la couleur de la forme : il n'y a plus de trou vide qu'on ne
- * pourrait pas remplir, et le contour garde sa géométrie pure.
- */
-function slivers(shape: Shape, g: number, id: string): string {
-  const h = g / 2;
-  let holes = '';
-  for (const c of shape.cells.values()) {
-    holes += `<rect x="${c.i - h}" y="${c.j - h}" width="${1 + g}" height="${1 + g}" fill="#000"/>`;
-  }
-  const b = shape.box;
-  return (
-    `<mask id="${id}" maskUnits="userSpaceOnUse" x="${b.x0 - 1}" y="${b.y0 - 1}" width="${b.x1 - b.x0 + 2}" height="${b.y1 - b.y0 + 2}">` +
-    `<path fill="#fff" d="${polyPath(shape.outline)}"/>${holes}</mask>` +
-    `<path fill="${shape.color}" mask="url(#${id})" d="${polyPath(shape.outline)}"/>`
-  );
-}
-
-/**
  * La figure, en unités monde (1 = une cellule). g = gap des tuiles en unités monde.
  * Couleurs pleines, sans transparence. Là où deux formes se chevauchent, la plus ancienne
  * reste entière, par-dessus : la nouvelle forme vient se glisser autour d'elle.
@@ -113,20 +97,32 @@ export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'
   const placed = [...game.filled].filter((k) => !game.prefilled.has(k));
   const covered = prefilledByColor(game);
   if (mode === 'play') {
-    // Forme en cours, tout en dessous : des tuiles, pour voir les cases à remplir.
+    // Forme en cours : des tuiles, pour voir les cases à remplir.
     const d = tilesPath(active, placed, g);
     if (d) out += `<path fill="${active.color}" d="${d}"/>`;
-    for (const [color, keys] of covered) out += `<path fill="${color}" d="${tilesPath(active, keys, g)}"/>`;
     const empty = [...active.cells.keys()].filter((k) => !game.filled.has(k));
     out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
-    out += slivers(active, g, id + '-slivers');
+    // Là où une ancienne forme la chevauche, elle se cale sur la grille : des blocs unis de sa
+    // couleur, case par case. Dans la forme en cours, on ne voit donc jamais une courbe ou une
+    // diagonale d'une autre forme couper une case : elle retrouve sa géométrie une fois finie.
+    let n = 0;
+    for (const [color, keys] of covered) out += cellsFlat(active, keys, color, `${id}-cover${n++}`);
+    // Formes terminées (la plus ancienne au-dessus), masquées à l'intérieur de la forme en cours.
+    const b = figureBounds(game);
+    const m = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 10;
+    out +=
+      `<mask id="${id}-hole" maskUnits="userSpaceOnUse" x="${b.x0 - m}" y="${b.y0 - m}" width="${b.x1 - b.x0 + 2 * m}" height="${b.y1 - b.y0 + 2 * m}">` +
+      `<rect x="${b.x0 - m}" y="${b.y0 - m}" width="${b.x1 - b.x0 + 2 * m}" height="${b.y1 - b.y0 + 2 * m}" fill="#fff"/>` +
+      `<path d="${polyPath(active.outline)}" fill="#000"/></mask><g mask="url(#${id}-hole)">`;
+    for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
+    out += '</g>';
   } else {
     out += cellsFlat(active, placed, active.color, id + '-last');
     let n = 0;
     for (const [color, keys] of covered) out += cellsFlat(active, keys, color, `${id}-cover${n++}`);
+    // Formes terminées : la plus ancienne en dernier, donc au-dessus.
+    for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
   }
-  // Formes terminées : la plus ancienne en dernier, donc au-dessus.
-  for (let idx = last - 1; idx >= 0; idx--) out += flatShape(game.shapes[idx]);
 
   if (mode === 'play') {
     out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
@@ -197,7 +193,7 @@ export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): 
   for (const c of piece.cells) {
     const i = ax + c.dx;
     const j = ay + c.dy;
-    tiles += polyPath(shape.tile(i, j, g));
+    for (const t of shape.tiles(i, j, g)) tiles += polyPath(t);
     // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce.
     const poly = shape.piece(i, j);
     for (let k = 0; k < poly.length; k++) {

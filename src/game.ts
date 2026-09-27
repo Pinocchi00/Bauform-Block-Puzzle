@@ -50,6 +50,8 @@ export class Game {
   readonly shapes: Shape[] = [];
   /** Cellules couvertes par les formes terminées. */
   private figure = new Set<string>();
+  /** Cases touchées par la figure, même d'un petit bout. */
+  private figureTouched = new Set<string>();
   figureBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Cellules remplies de la forme active (chevauchement compris). */
   filled = new Set<string>();
@@ -162,8 +164,9 @@ export class Game {
   private startNextShape(): void {
     const done = this.active;
     for (const key of done.cells.keys()) this.figure.add(key);
+    for (const key of done.touched) this.figureTouched.add(key);
     const lastColors = this.shapes.slice(-2).map((s) => s.color);
-    const next = nextShape(this.rng, done, lastColors, this.figure, this.figureBox, this.aspect);
+    const next = nextShape(this.rng, done, lastColors, this.figure, this.figureBox, this.aspect, this.figureTouched);
     this.shapes.push(next);
     const b = this.figureBox;
     this.figureBox = {
@@ -180,35 +183,37 @@ export class Game {
   }
 
   /**
-   * Pièce de remplacement. Le plus souvent, une pièce ordinaire (barre, L, T, carré…) tirée
-   * au hasard et gardée seulement si elle rentre quelque part : elle n'est pas taillée sur
-   * mesure pour un trou, la distribution paraît naturelle. De temps en temps, une pièce au
-   * hasard sans vérifier qu'elle rentre : c'est ce qui rend la défaite possible.
+   * Pièce de remplacement, tirée comme dans un vrai jeu de pièces :
+   *  1. on tire sa taille (1 à 4 cases, le cube seul arrive environ 1 fois sur 10, à tout moment) ;
+   *  2. on tire une pièce ordinaire de cette taille (barre, L, T, carré…), gardée si elle rentre
+   *     quelque part, de préférence sans laisser de case isolée ;
+   *  3. si aucune pièce de cette taille ne rentre et qu'une autre pièce en main rentre encore,
+   *     on la donne quand même : rien n'est « taillé » pour finir la forme ;
+   *  4. sinon seulement (plus rien ne rentre), un morceau découpé dans les cases libres.
+   * De temps en temps (RANDOM_REFILL_CHANCE), une pièce au hasard sans vérification :
+   * c'est ce qui rend la défaite possible.
    */
   private refillPiece(): Piece {
+    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
     const grace = this.shapesCompleted < GRACE_SHAPES;
-    if (!grace && this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(false);
-    // On préfère une pièce qui peut se poser sans laisser de case isolée (elle reste une
-    // forme banale, mais le jeu reste juste) ; à défaut, n'importe quelle pièce qui rentre.
+    if (!grace && this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(size);
+
     let fallback: Piece | null = null;
     for (let t = 0; t < NATURAL_PIECE_TRIES; t++) {
-      const p = this.randomPiece(false);
+      const p = this.randomPiece(size);
       const anchors = this.anchors(p);
       if (!anchors.length) continue;
       if (anchors.some((a) => this.isolatedAfter(p, a.x, a.y) === 0)) return p;
       fallback ??= p;
     }
     if (fallback) return fallback;
-    // Aucune pièce ordinaire ne rentre (fin de forme, trous) : parfois, une pièce découpée
-    // dans les cases libres ; sinon une pièce au hasard, qui ne rentrera peut-être pas.
-    if (this.rng.chance(EXACT_PIECE_CHANCE)) {
-      const reserved = new Set(
-        this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
-      );
-      const exact = this.makePiece(reserved, true) ?? this.makePiece(new Set(), true);
-      if (exact) return exact;
-    }
-    return this.randomPiece(false);
+
+    const handFits = this.hand.some((p) => p && this.fits(p));
+    if (handFits || !this.rng.chance(EXACT_PIECE_CHANCE)) return this.randomPiece(size);
+    const reserved = new Set(
+      this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
+    );
+    return this.makePiece(reserved, true) ?? this.makePiece(new Set(), true) ?? this.randomPiece(size);
   }
 
   /** Nombre de cases libres qui resteraient isolées (sans voisine libre) après cette pose. */
@@ -223,10 +228,8 @@ export class Game {
     return n;
   }
 
-  /** Pièce au hasard (1 à 4 cases, ou 2 à 4 sans cube seul), sans lien avec les cases libres. */
-  private randomPiece(allowSingle: boolean): Piece {
-    const drawn = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
-    const size = allowSingle ? drawn : Math.max(2, drawn);
+  /** Pièce ordinaire au hasard de la taille donnée, sans lien avec les cases libres. */
+  private randomPiece(size: number): Piece {
     const cells = [{ dx: 0, dy: 0 }];
     const has = (x: number, y: number) => cells.some((c) => c.dx === x && c.dy === y);
     while (cells.length < size) {

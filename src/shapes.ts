@@ -100,6 +100,14 @@ function transform(p: Pt, rot: number, ox: number, oy: number): Pt {
   return { x: x + ox, y: y + oy };
 }
 
+/** Rectangle en cases : de (i0, j0) à (i1, j1) inclus. */
+export interface CellRect {
+  i0: number;
+  j0: number;
+  i1: number;
+  j1: number;
+}
+
 export class Shape {
   readonly spec: ShapeSpec;
   readonly color: string;
@@ -107,6 +115,17 @@ export class Shape {
   readonly outline: Poly;
   /** Cellules de la forme, par clé "i,j". */
   readonly cells: Map<string, Cell>;
+  /**
+   * Cases touchées par la forme, même d'un tout petit bout (pour mesurer les chevauchements
+   * tels qu'on les voit).
+   */
+  readonly touched: Set<string>;
+  /**
+   * Bouts de forme trop petits pour être une case, rattachés à une case voisine :
+   * clé de la case → cases voisines dont elle absorbe le bout. Sa tuile s'agrandit d'autant,
+   * il ne reste ni trou ni petit coin isolé le long des arrondis et des pointes.
+   */
+  readonly absorbed: Map<string, { i: number; j: number }[]>;
   readonly box: { x0: number; y0: number; x1: number; y1: number };
   private insetCache = new Map<number, Poly>();
 
@@ -115,7 +134,10 @@ export class Shape {
     this.color = color;
     this.outline = this.polygon(0);
     this.box = bounds(this.outline);
-    this.cells = computeCells(this.outline);
+    const { cells, touched, absorbed } = computeCells(this.outline);
+    this.cells = cells;
+    this.touched = touched;
+    this.absorbed = absorbed;
   }
 
   /** Contour rétréci de d (en unités monde). */
@@ -130,12 +152,27 @@ export class Shape {
   }
 
   /**
-   * Tuile dessinée pour la cellule (i, j) : (cellule ∩ forme) réduite du gap g.
-   * Revient à couper le carré rétréci de g/2 par la forme rétrécie de g/2.
+   * Zone couverte par la case (i, j) : la case elle-même, agrandie des petits bouts voisins
+   * qu'elle absorbe (un rectangle par bout, pour rester sans joint visible).
    */
-  tile(i: number, j: number, g: number): Poly {
+  rects(i: number, j: number): CellRect[] {
+    const extra = this.absorbed.get(cellKey(i, j));
+    if (!extra) return [{ i0: i, j0: j, i1: i, j1: j }];
+    return extra.map((e) => ({
+      i0: Math.min(i, e.i),
+      j0: Math.min(j, e.j),
+      i1: Math.max(i, e.i),
+      j1: Math.max(j, e.j),
+    }));
+  }
+
+  /**
+   * Tuiles dessinées pour la case (i, j) : (zone de la case ∩ forme), réduites du gap g.
+   * Revient à couper chaque rectangle rétréci de g/2 par la forme rétrécie de g/2.
+   */
+  tiles(i: number, j: number, g: number): Poly[] {
     const h = g / 2;
-    return clipRect(this.polygon(h), i + h, j + h, i + 1 - h, j + 1 - h);
+    return this.rects(i, j).map((r) => clipRect(this.polygon(h), r.i0 + h, r.j0 + h, r.i1 + 1 - h, r.j1 + 1 - h));
   }
 
   /** Morceau exact de la cellule (i, j) dans la forme (sans gap). */
@@ -144,18 +181,32 @@ export class Shape {
   }
 }
 
-function computeCells(outline: Poly): Map<string, Cell> {
+function computeCells(outline: Poly) {
   const cells = new Map<string, Cell>();
+  const touched = new Set<string>();
+  const small: { i: number; j: number }[] = [];
   const b = bounds(outline);
   for (let j = Math.floor(b.y0); j < Math.ceil(b.y1); j++) {
     for (let i = Math.floor(b.x0); i < Math.ceil(b.x1); i++) {
       const piece = clipRect(outline, i, j, i + 1, j + 1);
       if (piece.length < 3) continue;
       const a = area(piece);
-      if (a < MIN_CELL_FRACTION - 1e-6) continue;
+      if (a < 1e-4) continue;
       const key = cellKey(i, j);
-      cells.set(key, { i, j, key, area: a });
+      touched.add(key);
+      if (a < MIN_CELL_FRACTION - 1e-6) small.push({ i, j });
+      else cells.set(key, { i, j, key, area: a });
     }
   }
-  return cells;
+  // Chaque petit bout est rattaché à la case voisine (côté commun) la plus grande.
+  const absorbed = new Map<string, { i: number; j: number }[]>();
+  for (const s of small) {
+    let best: Cell | undefined;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const c = cells.get(cellKey(s.i + di, s.j + dj));
+      if (c && (!best || c.area > best.area)) best = c;
+    }
+    if (best) absorbed.set(best.key, [...(absorbed.get(best.key) ?? []), s]);
+  }
+  return { cells, touched, absorbed };
 }

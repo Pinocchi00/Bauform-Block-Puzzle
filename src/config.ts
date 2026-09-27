@@ -35,23 +35,23 @@ export const SHAPE_MAX_CELLS = 36;
 /** Une forme ne dépasse jamais cette largeur ou hauteur (en cases), pour s'afficher toujours pareil. */
 export const SHAPE_MAX_SPAN = 8;
 
-/** Part de la nouvelle forme qui chevauche la précédente. */
-export const OVERLAP_MIN = 0.1;
-export const OVERLAP_MAX = 0.2;
+/** Part de la nouvelle forme qui chevauche la précédente (en cases). */
+export const OVERLAP_MIN = 0.05;
+export const OVERLAP_MAX = 0.15;
 
 /**
  * Parfois, la nouvelle forme ne chevauche pas la précédente : elle est posée à côté,
  * séparée par un espace de 10 à 20 % de sa taille (au moins une case).
  */
-export const SPACED_SHAPE_CHANCE = 0.35;
+export const SPACED_SHAPE_CHANCE = 0.4;
 export const SPACING_MIN = 0.1;
 export const SPACING_MAX = 0.2;
 
 /**
  * Probabilité de tirer une pièce de 1, 2, 3 ou 4 cellules.
- * Les pièces d'une seule case sont rares : elles ne servent surtout qu'à boucher un trou isolé.
+ * Le cube seul peut arriver à tout moment (environ 1 fois sur 20), pas seulement pour finir.
  */
-export const PIECE_SIZE_WEIGHTS = [0.03, 0.3, 0.35, 0.32];
+export const PIECE_SIZE_WEIGHTS = [0.05, 0.3, 0.34, 0.31];
 
 /**
  * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main).
@@ -74,8 +74,8 @@ export const RANDOM_REFILL_CHANCE = 0.06;
 export const GRACE_SHAPES = 1;
 
 /**
- * Quand plus aucune pièce ordinaire ne rentre (fin de forme, trous isolés), probabilité de
- * recevoir quand même une pièce découpée dans les cases libres. Sinon, pièce au hasard.
+ * Quand plus aucune pièce ne rentre, ni dans la main ni parmi les pièces ordinaires,
+ * probabilité de recevoir un morceau découpé dans les cases libres. Sinon, pièce au hasard.
  */
 export const EXACT_PIECE_CHANCE = 1;
 
