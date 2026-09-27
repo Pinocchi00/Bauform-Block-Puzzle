@@ -9,7 +9,8 @@
 //  - le Bauhaus : Kandinsky y associait chaque couleur à un son (le bleu profond comme un
 //    violoncelle, le jaune vif, le rouge chaud et plein, le noir comme un silence).
 //    Chaque forme a donc sa propre voix, selon sa couleur.
-// Tout reste dans le grave et le médium (filtre à 1 800 Hz) pour ne jamais agresser l'oreille.
+// Les notes restent dans le médium (entre 440 et 1 200 Hz environ) : c'est là qu'un haut-parleur
+// de téléphone sonne bien, sans monter dans les aigus qui agressent l'oreille (filtre à 3 000 Hz).
 
 import { COLORS } from './config';
 import { storage } from './storage';
@@ -24,7 +25,7 @@ interface Voice {
 const VOICES: Record<string, Voice> = {
   [COLORS.blue]: { base: 48, ring: 0.55, bright: 0.25 }, // do grave, profond et long
   [COLORS.red]: { base: 53, ring: 0.4, bright: 0.45 }, // fa, chaud et plein
-  [COLORS.yellow]: { base: 57, ring: 0.3, bright: 0.7 }, // la, vif et clair
+  [COLORS.yellow]: { base: 55, ring: 0.3, bright: 0.7 }, // sol, vif et clair
   [COLORS.black]: { base: 45, ring: 0.18, bright: 0.15 }, // la grave, mat, presque un silence
   [COLORS.grey]: { base: 50, ring: 0.25, bright: 0.3 }, // ré, neutre et feutré
 };
@@ -44,13 +45,13 @@ function audio(): AudioContext | null {
   try {
     if (!ctx) {
       ctx = new AudioContext();
-      // Filtre doux (rien au-dessus de ~1 800 Hz) → volume général → limiteur (jamais de saturation).
+      // Filtre doux (rien au-dessus de ~3 000 Hz) → volume général → limiteur (jamais de saturation).
       const soft = ctx.createBiquadFilter();
       soft.type = 'lowpass';
-      soft.frequency.value = 1800;
+      soft.frequency.value = 3000;
       soft.Q.value = 0.5;
       const master = ctx.createGain();
-      master.gain.value = 3.5;
+      master.gain.value = 5;
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = -4;
       limiter.knee.value = 2;
@@ -104,7 +105,7 @@ function block(midi: number, delay: number, volume: number, voice: Voice): void 
   src.buffer = noise;
   const band = a.createBiquadFilter();
   band.type = 'bandpass';
-  band.frequency.value = 600 + 700 * voice.bright;
+  band.frequency.value = 1200 + 900 * voice.bright;
   band.Q.value = 1.2;
   const g = a.createGain();
   g.gain.setValueAtTime(volume * 0.5, t);
@@ -131,7 +132,7 @@ export const feedback = {
   place(fill: number, color: string) {
     const voice = voiceOf(color);
     const step = STEPS[Math.min(STEPS.length - 1, Math.floor(Math.max(0, fill) * STEPS.length))];
-    block(voice.base + 12 + step, 0, 0.5, voice);
+    block(voice.base + 24 + step, 0, 0.7, voice);
     vibrate(15);
   },
   /**
@@ -140,16 +141,16 @@ export const feedback = {
    */
   complete(color: string) {
     const voice = voiceOf(color);
-    const notes = [0, 4, 7, 12].map((n) => voice.base + 12 + n);
-    notes.forEach((m, k) => block(m, k * 0.09, 0.15, { ...voice, ring: voice.ring + 0.5 }));
-    block(voice.base, 0.36, 0.2, { ...voice, ring: 1.2, bright: 0.1 });
+    const notes = [0, 4, 7, 12].map((n) => voice.base + 24 + n);
+    notes.forEach((m, k) => block(m, k * 0.09, 0.12, { ...voice, ring: voice.ring + 0.5 }));
+    block(voice.base + 12, 0.36, 0.15, { ...voice, ring: 1.2, bright: 0.1 });
     vibrate([20, 60, 30]);
   },
   /** Défaite : deux blocs graves et mats, qui descendent. */
   gameOver() {
     const voice = VOICES[COLORS.black];
-    block(52, 0, 0.3, { ...voice, ring: 0.6 });
-    block(45, 0.3, 0.32, { ...voice, ring: 1.1 });
+    block(64, 0, 0.3, { ...voice, ring: 0.6 });
+    block(57, 0.3, 0.32, { ...voice, ring: 1.1 });
     vibrate(60);
   },
 };
