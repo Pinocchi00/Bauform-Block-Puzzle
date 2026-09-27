@@ -19,8 +19,8 @@ function tilePath(shape: Shape, key: string, g: number): string {
   const id = g.toFixed(5) + '|' + key;
   let d = cache.get(id);
   if (d === undefined) {
-    const c = shape.cells.get(key)!;
-    d = shape.tiles(c.i, c.j, g).map((t) => polyPath(t)).join('');
+    const [i, j] = key.split(',').map(Number);
+    d = polyPath(shape.tile(i, j, g));
     cache.set(id, d);
   }
   return d;
@@ -69,6 +69,12 @@ function cellsFlat(shape: Shape, keys: Iterable<string>, color: string, id: stri
   );
 }
 
+/** Couleur de la plus ancienne forme terminée qui couvre cette case, s'il y en a une. */
+function oldColorAt(game: Game, key: string): string | null {
+  const old = game.shapes.slice(0, -1).find((s) => s.cells.has(key));
+  return old ? old.color : null;
+}
+
 /**
  * Cases de la forme active déjà couvertes par une ancienne forme, regroupées par couleur.
  * Elles prennent la couleur de cette ancienne forme : là où elle chevauche la nouvelle,
@@ -97,16 +103,26 @@ export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'
   const placed = [...game.filled].filter((k) => !game.prefilled.has(k));
   const covered = prefilledByColor(game);
   if (mode === 'play') {
-    // Forme en cours : des tuiles, pour voir les cases à remplir.
-    const d = tilesPath(active, placed, g);
-    if (d) out += `<path fill="${active.color}" d="${d}"/>`;
-    const empty = [...active.cells.keys()].filter((k) => !game.filled.has(k));
-    out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
-    // Là où une ancienne forme la chevauche, elle se cale sur la grille : des blocs unis de sa
-    // couleur, case par case. Dans la forme en cours, on ne voit donc jamais une courbe ou une
-    // diagonale d'une autre forme couper une case : elle retrouve sa géométrie une fois finie.
-    let n = 0;
-    for (const [color, keys] of covered) out += cellsFlat(active, keys, color, `${id}-cover${n++}`);
+    // Forme en cours : des tuiles, toutes séparées par le même joint. Chaque case prend la
+    // couleur de son état : crème si elle est vide, couleur de la forme si elle est remplie,
+    // couleur de l'ancienne forme si elle la recouvre (elle se cale sur la grille, sans courbe
+    // ni diagonale d'une autre forme qui coupe une case). Les petits bouts suivent leur case,
+    // sauf s'ils sont recouverts par une ancienne forme : ils en prennent alors la couleur.
+    const groups = new Map<string, string[]>();
+    const add = (color: string, key: string) => groups.set(color, [...(groups.get(color) ?? []), key]);
+    for (const c of active.cells.values()) {
+      const color = game.prefilled.has(c.key)
+        ? game.coverColor(c.key)
+        : game.filled.has(c.key)
+          ? active.color
+          : COLORS.shapeInside;
+      add(color, c.key);
+      for (const b of active.absorbed.get(c.key) ?? []) {
+        const k = cellKey(b.i, b.j);
+        add(oldColorAt(game, k) ?? color, k);
+      }
+    }
+    for (const [color, keys] of groups) out += `<path fill="${color}" d="${tilesPath(active, keys, g)}"/>`;
     // Formes terminées (la plus ancienne au-dessus), masquées à l'intérieur de la forme en cours.
     const b = figureBounds(game);
     const m = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 10;
@@ -193,7 +209,8 @@ export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): 
   for (const c of piece.cells) {
     const i = ax + c.dx;
     const j = ay + c.dy;
-    for (const t of shape.tiles(i, j, g)) tiles += polyPath(t);
+    tiles += polyPath(shape.tile(i, j, g));
+    for (const b of shape.absorbed.get(cellKey(i, j)) ?? []) tiles += polyPath(shape.tile(b.i, b.j, g));
     // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce.
     const poly = shape.piece(i, j);
     for (let k = 0; k < poly.length; k++) {

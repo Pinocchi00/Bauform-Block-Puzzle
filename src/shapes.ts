@@ -122,8 +122,9 @@ export class Shape {
   readonly touched: Set<string>;
   /**
    * Bouts de forme trop petits pour être une case, rattachés à une case voisine :
-   * clé de la case → cases voisines dont elle absorbe le bout. Sa tuile s'agrandit d'autant,
-   * il ne reste ni trou ni petit coin isolé le long des arrondis et des pointes.
+   * clé de la case → bouts voisins qui la suivent. Chaque bout reste une petite tuile à part
+   * (la grille reste régulière), mais il prend l'état de sa case : crème quand elle est vide,
+   * couleur de la forme quand elle est remplie. Plus de trou ni de coin peint d'avance.
    */
   readonly absorbed: Map<string, { i: number; j: number }[]>;
   readonly box: { x0: number; y0: number; x1: number; y1: number };
@@ -152,8 +153,8 @@ export class Shape {
   }
 
   /**
-   * Zone couverte par la case (i, j) : la case elle-même, agrandie des petits bouts voisins
-   * qu'elle absorbe (un rectangle par bout, pour rester sans joint visible).
+   * Zone couverte par la case (i, j) et les petits bouts qu'elle entraîne, en rectangles
+   * (pour les aplats de la fin, sans joint visible).
    */
   rects(i: number, j: number): CellRect[] {
     const extra = this.absorbed.get(cellKey(i, j));
@@ -167,12 +168,12 @@ export class Shape {
   }
 
   /**
-   * Tuiles dessinées pour la case (i, j) : (zone de la case ∩ forme), réduites du gap g.
-   * Revient à couper chaque rectangle rétréci de g/2 par la forme rétrécie de g/2.
+   * Tuile dessinée pour la case (i, j) (ou un petit bout) : (case ∩ forme) réduite du gap g.
+   * Revient à couper le carré rétréci de g/2 par la forme rétrécie de g/2.
    */
-  tiles(i: number, j: number, g: number): Poly[] {
+  tile(i: number, j: number, g: number): Poly {
     const h = g / 2;
-    return this.rects(i, j).map((r) => clipRect(this.polygon(h), r.i0 + h, r.j0 + h, r.i1 + 1 - h, r.j1 + 1 - h));
+    return clipRect(this.polygon(h), i + h, j + h, i + 1 - h, j + 1 - h);
   }
 
   /** Morceau exact de la cellule (i, j) dans la forme (sans gap). */

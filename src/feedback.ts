@@ -54,7 +54,7 @@ function audio(): AudioContext | null {
       soft.frequency.value = 3000;
       soft.Q.value = 0.5;
       const master = ctx.createGain();
-      master.gain.value = 7;
+      master.gain.value = 5;
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = -3;
       limiter.knee.value = 2;
@@ -147,7 +147,7 @@ export const feedback = {
     const touch = { ...voice, ring: vary(voice.ring, 0.15), bright: vary(voice.bright, 0.25) };
     block(voice.base + 24 + STEPS[step], 0, vary(0.65, 0.1), touch);
     // De temps en temps, le bloc « sonne » plus grave, comme posé sur un autre bloc.
-    if (Math.random() < 0.25) block(voice.base + 12 + STEPS[step], 0.01, 0.25, { ...touch, bright: 0.1 });
+    if (Math.random() < 0.25) block(voice.base + 12 + STEPS[step], 0.01, 0.15, { ...touch, bright: 0.1 });
     vibrate(15);
   },
   /**
