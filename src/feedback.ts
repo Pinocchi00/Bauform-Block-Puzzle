@@ -54,7 +54,7 @@ function audio(): AudioContext | null {
       soft.frequency.value = 3000;
       soft.Q.value = 0.5;
       const master = ctx.createGain();
-      master.gain.value = 5;
+      master.gain.value = 4;
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = -3;
       limiter.knee.value = 2;

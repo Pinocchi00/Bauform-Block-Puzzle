@@ -36,6 +36,11 @@ export interface MoveResult {
 }
 
 export const HAND_SIZE = 3;
+
+/** Forme d'une pièce, sous forme de texte (deux pièces identiques ont la même). */
+function pieceSignature(p: Piece): string {
+  return p.cells.map((c) => c.dx + ':' + c.dy).join(' ');
+}
 const DIRS = [
   [1, 0],
   [-1, 0],
@@ -50,8 +55,11 @@ export class Game {
   readonly shapes: Shape[] = [];
   /** Cellules couvertes par les formes terminées. */
   private figure = new Set<string>();
-  /** Cases touchées par la figure, même d'un petit bout. */
-  private figureTouched = new Set<string>();
+  /**
+   * Cases touchées par la figure, même d'un petit bout, avec la plus petite part couverte
+   * par une forme (1 = case pleine pour toutes les formes qui la touchent).
+   */
+  private figureTouched = new Map<string, number>();
   figureBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Cellules remplies de la forme active (chevauchement compris). */
   filled = new Set<string>();
@@ -164,7 +172,9 @@ export class Game {
   private startNextShape(): void {
     const done = this.active;
     for (const key of done.cells.keys()) this.figure.add(key);
-    for (const key of done.touched) this.figureTouched.add(key);
+    for (const [key, a] of done.touched) {
+      this.figureTouched.set(key, Math.min(a, this.figureTouched.get(key) ?? 1));
+    }
     const lastColors = this.shapes.slice(-2).map((s) => s.color);
     const next = nextShape(this.rng, done, lastColors, this.figure, this.figureBox, this.aspect, this.figureTouched);
     this.shapes.push(next);
@@ -198,9 +208,15 @@ export class Game {
     const grace = this.shapesCompleted < GRACE_SHAPES;
     if (!grace && this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(size);
 
+    // Pas deux fois la même pièce en main, tant que c'est possible.
+    const same = (p: Piece) => {
+      const sig = pieceSignature(p);
+      return this.hand.some((h) => h && pieceSignature(h) === sig);
+    };
     let fallback: Piece | null = null;
     for (let t = 0; t < NATURAL_PIECE_TRIES; t++) {
       const p = this.randomPiece(size);
+      if (t < NATURAL_PIECE_TRIES - 5 && same(p)) continue;
       const anchors = this.anchors(p);
       if (!anchors.length) continue;
       if (anchors.some((a) => this.isolatedAfter(p, a.x, a.y) === 0)) return p;

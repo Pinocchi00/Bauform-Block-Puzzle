@@ -1,13 +1,10 @@
 // Tirage des nouvelles formes : type, taille, orientation et position aléatoires.
-// En général elles chevauchent la précédente de 10 à 20 % ; parfois elles sont posées
-// à côté, séparées par un espace de 10 à 20 % de leur taille.
+// Elles se collent contre la précédente, ou la chevauchent un peu sur des parties droites.
 
 import {
   OVERLAP_MAX,
   OVERLAP_MIN,
-  SPACED_SHAPE_CHANCE,
-  SPACING_MAX,
-  SPACING_MIN,
+  ADJACENT_SHAPE_CHANCE,
   SHAPE_COLORS,
   SHAPE_COLOR_WEIGHTS,
   SHAPE_MAX_CELLS,
@@ -91,15 +88,20 @@ function fitsSpan(shape: Shape): boolean {
 type Box = { x0: number; y0: number; x1: number; y1: number };
 
 /**
- * Forme suivante. On essaie des formes au hasard ; pour chacune, on cherche les positions
- * où elle chevauche la précédente comme il faut, puis on en choisit une parmi celles
- * qui gardent la figure la plus compacte (pour que la caméra n'ait pas à trop reculer).
+ * Forme suivante. Deux façons de la poser, comme sur une affiche Bauhaus :
+ *  - collée contre la précédente (bord contre bord, sans espace ni chevauchement) ;
+ *  - ou en chevauchant la précédente de 5 à 15 %, mais seulement sur des cases pleines des
+ *    deux formes : jamais sur un arrondi ou une diagonale, qu'on ne peut pas découper en
+ *    carrés sans que ça se voie.
+ * Parmi les positions possibles, on garde celles qui laissent la figure la plus compacte
+ * (à la proportion de l'écran, elle grandit donc surtout en hauteur).
  *
  * @param avoidColors couleurs des dernières formes, à ne pas reprendre
  * @param figure cellules déjà couvertes par la figure
  * @param figureBox rectangle qui englobe la figure
- * @param touched cases touchées par la figure, même d'un petit bout (chevauchement visible)
  * @param aspect largeur / hauteur de la zone de jeu à l'écran
+ * @param touched cases touchées par la figure (même d'un petit bout), avec la plus petite
+ *   part couverte par une forme
  */
 export function nextShape(
   rng: Rng,
@@ -108,19 +110,12 @@ export function nextShape(
   figure: Set<string>,
   figureBox: Box,
   aspect: number,
-  touched: Set<string> = figure,
+  touched: Map<string, number> = new Map([...figure].map((k) => [k, 1])),
 ): Shape {
-  const spaced = rng.chance(SPACED_SHAPE_CHANCE);
-  for (let attempt = 0; attempt < 300; attempt++) {
-    // Si rien ne convient, on relâche peu à peu les contraintes.
-    const phase = Math.floor(attempt / 100);
-    const slack = phase === 0 ? 0 : 0.1;
-    const figureMax = phase === 0 ? OVERLAP_MAX + 0.05 : 0.5;
-    // Chevauchement tel qu'on le voit (tous les bouts de forme, pas seulement les cases).
-    const visibleMax = phase === 0 ? OVERLAP_MAX + 0.1 : 1;
+  const adjacentFirst = rng.chance(ADJACENT_SHAPE_CHANCE);
+  for (let attempt = 0; attempt < 400; attempt++) {
     const base = new Shape(randomSpec(rng, previous.spec.kind), '');
-    const cells = [...base.cells.values()];
-    const n = cells.length;
+    const n = base.cells.size;
     if (n < SHAPE_MIN_CELLS || n > SHAPE_MAX_CELLS || !fitsSpan(base)) continue;
 
     const fitOf = (dx: number, dy: number) => {
@@ -138,38 +133,14 @@ export function nextShape(
       return fit * (1 - 0.15 * drift);
     };
 
-    // Forme espacée (si ça ne marche pas après quelques essais, on revient au chevauchement).
-    const options: Option[] = spaced && attempt < 60 ? spacedOptions(base, previous, touched, fitOf) : [];
-    if (spaced && attempt < 60 && !options.length) continue;
-    // En dernier recours, on accepte de se poser n'importe où sur la figure.
-    const pb = phase < 2 ? previous.box : figureBox;
-    const bb = base.box;
-    const overlapping = !options.length;
-    for (let dy = Math.floor(pb.y0 - bb.y1); overlapping && dy <= Math.ceil(pb.y1 - bb.y0); dy++) {
-      for (let dx = Math.floor(pb.x0 - bb.x1); dx <= Math.ceil(pb.x1 - bb.x0); dx++) {
-        let onPrevious = 0;
-        let onFigure = 0;
-        for (const c of cells) {
-          const k = cellKey(c.i + dx, c.j + dy);
-          if (previous.cells.has(k)) onPrevious++;
-          if (figure.has(k)) onFigure++;
-        }
-        const ratio = (phase < 2 ? onPrevious : onFigure) / n;
-        if (ratio < OVERLAP_MIN - slack || ratio > OVERLAP_MAX + slack) continue;
-        if (onFigure / n > figureMax) continue;
-        if (n - onFigure < MIN_FREE_CELLS) continue;
-        let visible = 0;
-        for (const key of base.touched) {
-          const [i, j] = key.split(',').map(Number);
-          if (touched.has(cellKey(i + dx, j + dy))) visible++;
-        }
-        if (visible / base.touched.size > visibleMax) continue;
-        options.push({ dx, dy, fit: fitOf(dx, dy) });
-      }
-    }
+    // Au-delà de 300 essais (très rare), on accepte de se coller n'importe où contre la figure.
+    const target = attempt < 300 ? previous.box : figureBox;
+    const overlap = () => (attempt < 300 ? overlapOptions(base, previous, figure, touched, fitOf) : []);
+    const adjacent = () => adjacentOptions(base, target, touched, fitOf);
+    let options = adjacentFirst ? adjacent() : overlap();
+    if (!options.length) options = adjacentFirst ? overlap() : adjacent();
     if (!options.length) continue;
-    // On garde les positions qui laissent la figure la plus compacte, à la proportion
-    // de l'écran (elle grandit donc surtout en hauteur), et on tire au hasard parmi elles.
+
     options.sort((p, q) => q.fit - p.fit);
     const best = options.slice(0, Math.max(1, Math.ceil(options.length * 0.06)));
     const { dx, dy } = rng.pick(best);
@@ -180,50 +151,84 @@ export function nextShape(
 
 type Option = { dx: number; dy: number; fit: number };
 
+const FULL = 1 - 1e-6;
+const keyOf = (k: string, dx: number, dy: number) => {
+  const [i, j] = k.split(',').map(Number);
+  return cellKey(i + dx, j + dy);
+};
+
 /**
- * Positions où la forme est posée à côté de la précédente, sans la toucher :
- * séparée d'un espace de 10 à 20 % de sa taille (au moins une case), face à elle,
- * et à bonne distance de toute la figure.
+ * Positions où la forme chevauche la précédente de 5 à 15 % de ses cases, uniquement sur
+ * des cases pleines des deux côtés (aucun arrondi ni diagonale dans la zone commune).
  */
-function spacedOptions(
+function overlapOptions(
   base: Shape,
   previous: Shape,
   figure: Set<string>,
+  touched: Map<string, number>,
   fitOf: (dx: number, dy: number) => number,
 ): Option[] {
   const bb = base.box;
   const pb = previous.box;
-  const size = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0);
-  const gapMin = Math.max(1, Math.round(SPACING_MIN * size));
-  const gapMax = Math.max(gapMin, Math.round(SPACING_MAX * size));
-  // Toutes les cases touchées par la nouvelle forme, pour garder un vrai espace visible.
-  const cells = [...base.touched].map((k) => {
-    const [i, j] = k.split(',').map(Number);
-    return { i, j };
-  });
+  const n = base.cells.size;
   const options: Option[] = [];
-  for (let dy = Math.floor(pb.y0 - bb.y1 - gapMax); dy <= Math.ceil(pb.y1 - bb.y0 + gapMax); dy++) {
-    for (let dx = Math.floor(pb.x0 - bb.x1 - gapMax); dx <= Math.ceil(pb.x1 - bb.x0 + gapMax); dx++) {
-      // Espace entre les deux rectangles englobants, horizontalement et verticalement.
-      const gx = Math.max(pb.x0 - (bb.x1 + dx), bb.x0 + dx - pb.x1);
-      const gy = Math.max(pb.y0 - (bb.y1 + dy), bb.y0 + dy - pb.y1);
-      const sideBySide = gx >= gapMin && gx <= gapMax && gy <= -2;
-      const aboveBelow = gy >= gapMin && gy <= gapMax && gx <= -2;
-      if (!sideBySide && !aboveBelow) continue;
-      // Aucune case de la figure trop près.
-      let tooClose = false;
-      for (const c of cells) {
-        for (let a = -gapMin; a <= gapMin && !tooClose; a++) {
-          for (let b = -gapMin; b <= gapMin; b++) {
-            if (figure.has(cellKey(c.i + dx + a, c.j + dy + b))) {
-              tooClose = true;
-              break;
-            }
-          }
+  for (let dy = Math.floor(pb.y0 - bb.y1); dy <= Math.ceil(pb.y1 - bb.y0); dy++) {
+    for (let dx = Math.floor(pb.x0 - bb.x1); dx <= Math.ceil(pb.x1 - bb.x0); dx++) {
+      let shared = 0;
+      let onPrevious = 0;
+      let clean = true;
+      for (const [k, a] of base.touched) {
+        const other = touched.get(keyOf(k, dx, dy));
+        if (other === undefined) continue;
+        // Case commune : elle doit être pleine pour la nouvelle forme et pour la figure.
+        if (a < FULL || other < FULL) {
+          clean = false;
+          break;
         }
-        if (tooClose) break;
+        shared++;
+        if (previous.cells.has(keyOf(k, dx, dy))) onPrevious++;
       }
-      if (!tooClose) options.push({ dx, dy, fit: fitOf(dx, dy) });
+      if (!clean || shared === 0) continue;
+      const ratio = onPrevious / n;
+      if (ratio < OVERLAP_MIN || ratio > OVERLAP_MAX) continue;
+      if (shared / n > OVERLAP_MAX + 0.05) continue;
+      let onFigure = 0;
+      for (const k of base.cells.keys()) if (figure.has(keyOf(k, dx, dy))) onFigure++;
+      if (n - onFigure < MIN_FREE_CELLS) continue;
+      options.push({ dx, dy, fit: fitOf(dx, dy) });
+    }
+  }
+  return options;
+}
+
+/**
+ * Positions où la forme est collée contre la cible (bord contre bord de leurs rectangles,
+ * face à face sur au moins deux cases), sans toucher aucune autre forme de la figure.
+ */
+function adjacentOptions(
+  base: Shape,
+  target: Box,
+  touched: Map<string, number>,
+  fitOf: (dx: number, dy: number) => number,
+): Option[] {
+  const bb = base.box;
+  const options: Option[] = [];
+  for (let dy = Math.floor(target.y0 - bb.y1); dy <= Math.ceil(target.y1 - bb.y0); dy++) {
+    for (let dx = Math.floor(target.x0 - bb.x1); dx <= Math.ceil(target.x1 - bb.x0); dx++) {
+      // Écart entre les deux rectangles englobants, horizontalement et verticalement.
+      const gx = Math.max(target.x0 - (bb.x1 + dx), bb.x0 + dx - target.x1);
+      const gy = Math.max(target.y0 - (bb.y1 + dy), bb.y0 + dy - target.y1);
+      const sideBySide = Math.abs(gx) < 1e-9 && gy <= -2;
+      const aboveBelow = Math.abs(gy) < 1e-9 && gx <= -2;
+      if (!sideBySide && !aboveBelow) continue;
+      let free = true;
+      for (const k of base.touched.keys()) {
+        if (touched.has(keyOf(k, dx, dy))) {
+          free = false;
+          break;
+        }
+      }
+      if (free) options.push({ dx, dy, fit: fitOf(dx, dy) });
     }
   }
   return options;

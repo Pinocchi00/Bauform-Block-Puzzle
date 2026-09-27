@@ -16,6 +16,7 @@ import {
   decorMarkup,
   figureBounds,
   figureMarkup,
+  oldColorAt,
   pieceMarkup,
   posterLinesMarkup,
   previewMarkup,
@@ -373,7 +374,9 @@ function moveDrag(px: number, py: number) {
   const same = best && drag.anchor && best.x === drag.anchor.x && best.y === drag.anchor.y;
   if (same || (!best && !drag.anchor)) return;
   drag.anchor = best;
-  previewEl.innerHTML = best ? previewMarkup(piece, best.x, best.y, GAP_PX / figureScale) : '';
+  previewEl.innerHTML = best
+    ? previewMarkup(piece, best.x, best.y, GAP_PX / figureScale, (k) => oldColorAt(game, k) !== null)
+    : '';
 }
 
 function endDrag(drop: boolean) {

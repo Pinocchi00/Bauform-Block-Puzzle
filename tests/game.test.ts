@@ -121,18 +121,20 @@ describe('partie', () => {
     expect(a.moves).toBe(b.moves);
   });
 
-  it('les nouvelles formes chevauchent la précédente de 10 à 20 %, ou sont posées à côté', () => {
-    let spaced = 0;
+  it('les nouvelles formes se collent ou chevauchent, jamais sur un arrondi ou une diagonale', () => {
+    let adjacent = 0;
     let overlapping = 0;
     for (let seed = 1; seed <= 20; seed++) {
       const rng = new Rng(seed);
       const shapes = [firstShape(rng)];
       const figure = new Set<string>();
+      const touched = new Map<string, number>();
       let box = { ...shapes[0].box };
       for (let k = 1; k <= 8; k++) {
         const prev = shapes[shapes.length - 1];
         for (const key of prev.cells.keys()) figure.add(key);
-        const cur = nextShape(rng, prev, [], figure, box, 0.46);
+        for (const [key, a] of prev.touched) touched.set(key, Math.min(a, touched.get(key) ?? 1));
+        const cur = nextShape(rng, prev, [], figure, box, 0.46, touched);
         shapes.push(cur);
         box = {
           x0: Math.min(box.x0, cur.box.x0),
@@ -140,19 +142,24 @@ describe('partie', () => {
           x1: Math.max(box.x1, cur.box.x1),
           y1: Math.max(box.y1, cur.box.y1),
         };
-        const onFigure = [...cur.cells.keys()].filter((key) => figure.has(key)).length;
-        if (onFigure === 0) {
-          spaced++;
+        const shared = [...cur.touched].filter(([key]) => touched.has(key));
+        if (shared.length === 0) {
+          adjacent++;
         } else {
           overlapping++;
-          const shared = [...cur.cells.keys()].filter((key) => prev.cells.has(key)).length;
-          expect(shared / cur.cells.size).toBeLessThanOrEqual(0.5);
+          // Zone commune : uniquement des cases pleines pour les deux formes.
+          for (const [key, a] of shared) {
+            expect(a).toBeCloseTo(1);
+            expect(touched.get(key)).toBeCloseTo(1);
+          }
+          expect(shared.length / cur.cells.size).toBeLessThanOrEqual(0.25);
         }
       }
     }
-    expect(spaced).toBeGreaterThan(0);
-    expect(overlapping).toBeGreaterThan(spaced);
+    expect(adjacent).toBeGreaterThan(0);
+    expect(overlapping).toBeGreaterThan(0);
   });
+
 
   it('réessayer la forme remet la forme active à son début', () => {
     const { game } = playRandomGame(3);

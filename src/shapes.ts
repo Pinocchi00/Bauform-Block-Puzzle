@@ -116,10 +116,10 @@ export class Shape {
   /** Cellules de la forme, par clé "i,j". */
   readonly cells: Map<string, Cell>;
   /**
-   * Cases touchées par la forme, même d'un tout petit bout (pour mesurer les chevauchements
-   * tels qu'on les voit).
+   * Cases touchées par la forme, même d'un tout petit bout, avec la part couverte (0 à 1).
+   * Sert à mesurer les chevauchements tels qu'on les voit.
    */
-  readonly touched: Set<string>;
+  readonly touched: Map<string, number>;
   /**
    * Bouts de forme trop petits pour être une case, rattachés à une case voisine :
    * clé de la case → bouts voisins qui la suivent. Chaque bout reste une petite tuile à part
@@ -184,7 +184,7 @@ export class Shape {
 
 function computeCells(outline: Poly) {
   const cells = new Map<string, Cell>();
-  const touched = new Set<string>();
+  const touched = new Map<string, number>();
   const small: { i: number; j: number }[] = [];
   const b = bounds(outline);
   for (let j = Math.floor(b.y0); j < Math.ceil(b.y1); j++) {
@@ -194,7 +194,7 @@ function computeCells(outline: Poly) {
       const a = area(piece);
       if (a < 1e-4) continue;
       const key = cellKey(i, j);
-      touched.add(key);
+      touched.set(key, a);
       if (a < MIN_CELL_FRACTION - 1e-6) small.push({ i, j });
       else cells.set(key, { i, j, key, area: a });
     }

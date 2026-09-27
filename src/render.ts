@@ -70,7 +70,7 @@ function cellsFlat(shape: Shape, keys: Iterable<string>, color: string, id: stri
 }
 
 /** Couleur de la plus ancienne forme terminée qui couvre cette case, s'il y en a une. */
-function oldColorAt(game: Game, key: string): string | null {
+export function oldColorAt(game: Game, key: string): string | null {
   const old = game.shapes.slice(0, -1).find((s) => s.cells.has(key));
   return old ? old.color : null;
 }
@@ -200,7 +200,13 @@ export function pieceMarkup(piece: Piece, cellPx: number): string {
 }
 
 /** Aperçu aimanté : teinte légère + contour en pointillés, en unités monde. */
-export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): string {
+export function previewMarkup(
+  piece: Piece,
+  ax: number,
+  ay: number,
+  g: number,
+  covered?: (key: string) => boolean,
+): string {
   const shape = piece.shape;
   const inPiece = new Set(piece.cells.map((c) => cellKey(ax + c.dx, ay + c.dy)));
   let tiles = '';
@@ -210,7 +216,10 @@ export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): 
     const i = ax + c.dx;
     const j = ay + c.dy;
     tiles += polyPath(shape.tile(i, j, g));
-    for (const b of shape.absorbed.get(cellKey(i, j)) ?? []) tiles += polyPath(shape.tile(b.i, b.j, g));
+    // Les petits bouts suivent la case, sauf ceux recouverts par une autre forme.
+    for (const b of shape.absorbed.get(cellKey(i, j)) ?? []) {
+      if (!covered?.(cellKey(b.i, b.j))) tiles += polyPath(shape.tile(b.i, b.j, g));
+    }
     // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce.
     const poly = shape.piece(i, j);
     for (let k = 0; k < poly.length; k++) {
