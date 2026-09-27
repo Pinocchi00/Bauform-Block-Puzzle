@@ -45,9 +45,9 @@ export const storage = {
   getSettings: (): Settings => ({ sound: true, vibrations: true, ...read<Partial<Settings>>('settings', {}) }),
   setSettings: (s: Settings) => write('settings', s),
 
-  /** Nombre de parties lancées depuis la dernière pub interstitielle. */
-  getGamesSinceAd: (): number => read('gamesSinceAd', 0),
-  setGamesSinceAd: (v: number) => write('gamesSinceAd', v),
+  /** Temps de jeu (millisecondes) depuis la dernière pub interstitielle. */
+  getPlaySinceAd: (): number => read('playSinceAd', 0),
+  setPlaySinceAd: (v: number) => write('playSinceAd', v),
 
   getStats: (): GameStats[] => read('stats', []),
   /** Ajoute ou met à jour une partie (même id), et garde les 20 dernières. */

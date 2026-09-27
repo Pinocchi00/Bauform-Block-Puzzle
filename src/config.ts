@@ -68,6 +68,12 @@ export const NATURAL_PIECE_TRIES = 25;
 export const RANDOM_REFILL_CHANCE = 0.06;
 
 /**
+ * Période de grâce : pendant les premières formes de la partie, pas de pièce au hasard.
+ * Évite les défaites en quelques secondes (mesuré : des parties de 15 à 30 s, frustrantes).
+ */
+export const GRACE_SHAPES = 1;
+
+/**
  * Quand plus aucune pièce ordinaire ne rentre (fin de forme, trous isolés), probabilité de
  * recevoir quand même une pièce découpée dans les cases libres. Sinon, pièce au hasard.
  */
@@ -78,7 +84,13 @@ export const POINTS_PER_CELL = 10;
 export const BONUS_PER_SHAPE_CELL = 10;
 
 /** Pubs (simulées en phase 1). */
-export const INTERSTITIAL_EVERY_N_GAMES = 3;
+/**
+ * Pub entre deux parties : seulement si on a joué au moins ce temps (secondes) depuis
+ * la dernière pub. Mesuré : une partie dure 1 min 40 en moyenne, mais beaucoup durent
+ * moins d'une minute ; compter le temps plutôt que les parties évite d'enchaîner des pubs
+ * après des défaites rapides (environ une pub toutes les 3 minutes de jeu).
+ */
+export const INTERSTITIAL_MIN_PLAY_SECONDS = 180;
 export const FAKE_AD_SECONDS = 3;
 
 /** Nombre de parties gardées pour l'écran de debug. */

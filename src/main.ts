@@ -5,7 +5,7 @@ import {
   DRAG_LIFT_PX,
   FAKE_AD_SECONDS,
   GAP_PX,
-  INTERSTITIAL_EVERY_N_GAMES,
+  INTERSTITIAL_MIN_PLAY_SECONDS,
   MAX_CELL_PX,
   VIEW_CELLS,
 } from './config';
@@ -228,14 +228,15 @@ function newGame(seed = randomSeed()) {
   setScreen('play');
 }
 
-/** Relancer une partie, avec une pub interstitielle de temps en temps. */
+/** Relancer une partie, avec une pub interstitielle toutes les ~3 minutes de jeu. */
 function relaunch() {
-  const n = storage.getGamesSinceAd() + 1;
-  if (n >= INTERSTITIAL_EVERY_N_GAMES) {
-    storage.setGamesSinceAd(0);
+  stopClock();
+  const played = storage.getPlaySinceAd() + playMs;
+  if (played >= INTERSTITIAL_MIN_PLAY_SECONDS * 1000) {
+    storage.setPlaySinceAd(0);
     showAd(() => newGame());
   } else {
-    storage.setGamesSinceAd(n);
+    storage.setPlaySinceAd(played);
     newGame();
   }
 }

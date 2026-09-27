@@ -3,6 +3,7 @@
 import {
   BONUS_PER_SHAPE_CELL,
   EXACT_PIECE_CHANCE,
+  GRACE_SHAPES,
   NATURAL_PIECE_TRIES,
   RANDOM_REFILL_CHANCE,
   PIECE_SIZE_WEIGHTS,
@@ -185,7 +186,8 @@ export class Game {
    * hasard sans vérifier qu'elle rentre : c'est ce qui rend la défaite possible.
    */
   private refillPiece(): Piece {
-    if (this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(false);
+    const grace = this.shapesCompleted < GRACE_SHAPES;
+    if (!grace && this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(false);
     // On préfère une pièce qui peut se poser sans laisser de case isolée (elle reste une
     // forme banale, mais le jeu reste juste) ; à défaut, n'importe quelle pièce qui rentre.
     let fallback: Piece | null = null;
