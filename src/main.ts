@@ -398,13 +398,14 @@ function placePiece(slot: number, anchor: { x: number; y: number }) {
   // La note monte à mesure que la forme se remplit ; une forme finie joue son carillon.
   if (!res.completed) {
     const todo = game.active.cells.size - game.prefilled.size;
-    feedback.place((game.filled.size - game.prefilled.size) / todo);
+    feedback.place((game.filled.size - game.prefilled.size) / todo, game.active.color);
   }
   showGain(res.gain);
   renderScore();
   renderFigure();
   if (res.completed) {
-    feedback.complete();
+    // La forme qui vient d'être finie est l'avant-dernière (une nouvelle vient d'apparaître).
+    feedback.complete(game.shapes[game.shapes.length - 2].color);
     fitCamera(true);
   }
   if (res.gameOver) {
