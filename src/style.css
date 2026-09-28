@@ -511,18 +511,18 @@ button:focus-visible,
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
 }
 
 #debug-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 #debug-table th,
 #debug-table td {
-  padding: 6px 4px;
+  padding: 6px 3px;
   border-bottom: 1px solid var(--lines);
   text-align: right;
   white-space: nowrap;
@@ -531,8 +531,8 @@ button:focus-visible,
 #debug-table th {
   font-weight: 500;
   color: var(--text2);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

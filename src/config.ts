@@ -71,10 +71,22 @@ export const NATURAL_PIECE_TRIES = 25;
 export const RANDOM_REFILL_CHANCE = 0.055;
 
 /**
- * Période de grâce : pendant les premières formes de la partie, pas de pièce au hasard.
- * Évite les défaites en quelques secondes (mesuré : des parties de 15 à 30 s, frustrantes).
+ * Montée en difficulté : à partir de DIFFICULTY_RAMP_START formes terminées, la probabilité
+ * ci-dessus grandit doucement, jusqu'à RANDOM_REFILL_CHANCE_MAX à DIFFICULTY_RAMP_END formes.
+ * Les parties ordinaires ne changent donc pas ; seules les très longues sont raccourcies.
+ * Mesuré : sans montée, un joueur appliqué a joué 24 min (114 formes) ; l'affiche devient
+ * illisible et la partie ne finit plus. Visé : les bonnes parties s'arrêtent vers 25 à 40 formes.
  */
-export const GRACE_SHAPES = 1;
+export const RANDOM_REFILL_CHANCE_MAX = 0.15;
+export const DIFFICULTY_RAMP_START = 10;
+export const DIFFICULTY_RAMP_END = 35;
+
+/**
+ * Période de grâce : pendant les premières formes de la partie, pas de pièce au hasard, donc
+ * pas de défaite possible. Évite les parties de moins d'une minute (mesuré : 44 s et 51 s,
+ * avec 1 et 2 formes seulement, frustrantes et avec une affiche presque vide).
+ */
+export const GRACE_SHAPES = 3;
 
 /**
  * Quand plus aucune pièce ne rentre, ni dans la main ni parmi les pièces ordinaires,

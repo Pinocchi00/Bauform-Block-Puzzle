@@ -69,6 +69,8 @@ it('simulation de parties', () => {
       '| max', shapes[shapes.length - 1],
       '| poses moy', avg((r) => r.moves),
       '| cubes seuls', (singles * 100).toFixed(1) + ' %',
+      '| ≤ 2 formes', runs.filter((r) => r.shapes <= 2).length + '/60',
+      '| > 40 formes', runs.filter((r) => r.shapes > 40).length + '/60',
     );
   }
 }, 120000);

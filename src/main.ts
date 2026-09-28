@@ -585,7 +585,7 @@ function openDebug() {
     <div>Score (moy.)<b>${fmt(Math.round(avg((g) => g.score)))}</b></div>
     <div>Record<b>${fmt(storage.getRecord())}</b></div>`;
   $('#debug-table').innerHTML =
-    '<tr><th>Date</th><th>Durée</th><th>Formes</th><th>Pièces</th><th>Score</th><th>Seed</th></tr>' +
+    '<tr><th>Date</th><th>Durée</th><th>Form.</th><th>Pièc.</th><th>Score</th><th>Seed</th></tr>' +
     list
       .map((g) => {
         const d = new Date(g.date);

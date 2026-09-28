@@ -7,6 +7,9 @@ import {
   GRACE_SHAPES,
   NATURAL_PIECE_TRIES,
   RANDOM_REFILL_CHANCE,
+  RANDOM_REFILL_CHANCE_MAX,
+  DIFFICULTY_RAMP_END,
+  DIFFICULTY_RAMP_START,
   PIECE_SIZE_WEIGHTS,
   POINTS_PER_CELL,
 } from './config';
@@ -199,13 +202,24 @@ export class Game {
    *  3. si aucune pièce de cette taille ne rentre et qu'une autre pièce en main rentre encore,
    *     on la donne quand même : rien n'est « taillé » pour finir la forme ;
    *  4. sinon seulement (plus rien ne rentre), un morceau découpé dans les cases libres.
-   * De temps en temps (RANDOM_REFILL_CHANCE), une pièce au hasard sans vérification :
-   * c'est ce qui rend la défaite possible.
+   * De temps en temps, une pièce au hasard sans vérification : c'est ce qui rend la défaite
+   * possible. De plus en plus souvent au fil des formes (voir randomChance).
    */
+  /**
+   * Probabilité qu'une nouvelle pièce soit tirée au hasard : nulle pendant les premières
+   * formes, puis RANDOM_REFILL_CHANCE, qui monte doucement jusqu'à RANDOM_REFILL_CHANCE_MAX
+   * dans les longues parties.
+   */
+  randomChance(): number {
+    if (this.shapesCompleted < GRACE_SHAPES) return 0;
+    const ramp = (this.shapesCompleted - DIFFICULTY_RAMP_START) / (DIFFICULTY_RAMP_END - DIFFICULTY_RAMP_START);
+    const t = Math.max(0, Math.min(1, ramp));
+    return RANDOM_REFILL_CHANCE + (RANDOM_REFILL_CHANCE_MAX - RANDOM_REFILL_CHANCE) * t;
+  }
+
   private refillPiece(): Piece {
     const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
-    const grace = this.shapesCompleted < GRACE_SHAPES;
-    if (!grace && this.rng.chance(RANDOM_REFILL_CHANCE)) return this.randomPiece(size);
+    if (this.rng.chance(this.randomChance())) return this.randomPiece(size);
 
     // Pas deux fois la même pièce en main, tant que c'est possible.
     const same = (p: Piece) => {

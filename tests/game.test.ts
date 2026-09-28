@@ -117,6 +117,20 @@ describe('partie', () => {
     }
   });
 
+  it('pas de pièce au hasard au début, puis de plus en plus souvent dans les longues parties', () => {
+    const game = new Game(1);
+    const at = (n: number) => {
+      game.shapesCompleted = n;
+      return game.randomChance();
+    };
+    expect(at(0)).toBe(0);
+    expect(at(2)).toBe(0);
+    expect(at(3)).toBeGreaterThan(0);
+    expect(at(10)).toBe(at(3));
+    expect(at(20)).toBeGreaterThan(at(10));
+    expect(at(60)).toBe(at(35));
+  });
+
   it('une pose invalide est refusée', () => {
     const game = new Game(42);
     const p = game.hand.find((x) => x)!;
