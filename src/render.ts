@@ -20,7 +20,7 @@ function tilePath(shape: Shape, key: string, g: number): string {
   let d = cache.get(id);
   if (d === undefined) {
     const [i, j] = key.split(',').map(Number);
-    d = polyPath(shape.tile(i, j, g));
+    d = shape.tile(i, j, g).map((p) => polyPath(p)).join('');
     cache.set(id, d);
   }
   return d;
@@ -101,15 +101,10 @@ export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'
   }
   done += '</g>';
 
-  // Tuiles de la forme en cours, regroupées par couleur. Les petits bouts le long des arrondis
-  // sont de petites tuiles à part qui suivent l'état de leur case.
+  // Tuiles de la forme en cours, regroupées par couleur : une tuile par case.
   const filled: string[] = [];
   const empty: string[] = [];
-  for (const c of active.cells.values()) {
-    const list = game.filled.has(c.key) ? filled : empty;
-    list.push(c.key);
-    for (const b of active.absorbed.get(c.key) ?? []) list.push(cellKey(b.i, b.j));
-  }
+  for (const c of active.cells.values()) (game.filled.has(c.key) ? filled : empty).push(c.key);
   let out = '<g>';
   if (filled.length) out += `<path fill="${active.color}" d="${tilesPath(active, filled, g)}"/>`;
   out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
@@ -213,21 +208,26 @@ export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): 
   for (const c of piece.cells) {
     const i = ax + c.dx;
     const j = ay + c.dy;
-    tiles += polyPath(shape.tile(i, j, g));
-    // Les petits bouts suivent leur case.
-    for (const b of shape.absorbed.get(cellKey(i, j)) ?? []) tiles += polyPath(shape.tile(b.i, b.j, g));
-    // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce.
-    const poly = shape.piece(i, j);
-    for (let k = 0; k < poly.length; k++) {
-      const p = poly[k];
-      const q = poly[(k + 1) % poly.length];
-      let neighbour: string | null = null;
-      if (Math.abs(p.x - q.x) < eps && Math.abs(p.x - (i + 1)) < eps) neighbour = cellKey(i + 1, j);
-      else if (Math.abs(p.x - q.x) < eps && Math.abs(p.x - i) < eps) neighbour = cellKey(i - 1, j);
-      else if (Math.abs(p.y - q.y) < eps && Math.abs(p.y - (j + 1)) < eps) neighbour = cellKey(i, j + 1);
-      else if (Math.abs(p.y - q.y) < eps && Math.abs(p.y - j) < eps) neighbour = cellKey(i, j - 1);
-      if (neighbour && inPiece.has(neighbour)) continue;
-      edges += `M${p.x} ${p.y}L${q.x} ${q.y}`;
+    tiles += shape.tile(i, j, g).map((p) => polyPath(p)).join('');
+    // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce
+    // (ni la case elle-même, quand sa tuile est faite de deux morceaux).
+    for (const poly of shape.piece(i, j)) {
+      for (let k = 0; k < poly.length; k++) {
+        const p = poly[k];
+        const q = poly[(k + 1) % poly.length];
+        const mx = (p.x + q.x) / 2;
+        const my = (p.y + q.y) / 2;
+        let sides: [number, number][] = [];
+        if (Math.abs(p.x - q.x) < eps && Math.abs(p.x - Math.round(p.x)) < eps) {
+          const x = Math.round(p.x);
+          sides = [[x - 1, Math.floor(my)], [x, Math.floor(my)]];
+        } else if (Math.abs(p.y - q.y) < eps && Math.abs(p.y - Math.round(p.y)) < eps) {
+          const y = Math.round(p.y);
+          sides = [[Math.floor(mx), y - 1], [Math.floor(mx), y]];
+        }
+        if (sides.length && sides.every(([si, sj]) => inPiece.has(shape.cellAt(si, sj) ?? ''))) continue;
+        edges += `M${p.x} ${p.y}L${q.x} ${q.y}`;
+      }
     }
   }
   return (

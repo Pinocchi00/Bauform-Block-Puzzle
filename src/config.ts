@@ -20,11 +20,12 @@ export const SHAPE_COLOR_WEIGHTS = [1, 1, 1, 0.8, 0.5];
 export const GAP_PX = 3;
 
 /**
- * Un morceau de cellule plus petit que ça (fraction de cellule) est exclu de la forme.
- * Assez haut pour que les cases de bord (pointes, arrondis) soient bien visibles et
- * qu'on comprenne qu'on peut y poser une pièce.
+ * Un morceau de cellule plus petit que ça (fraction de cellule) n'est pas une case : il agrandit
+ * la case voisine. Au-dessus, c'est une vraie case à remplir (les demi-cases des arrondis
+ * comprises). À 0,25, les bouts restants font au plus 16 % d'une case : la case qui les
+ * absorbe n'est que légèrement plus grande.
  */
-export const MIN_CELL_FRACTION = 0.45;
+export const MIN_CELL_FRACTION = 0.25;
 
 /** Épaisseur du contour noir de la forme active, en pixels. */
 export const OUTLINE_PX = 2.5;
@@ -66,7 +67,7 @@ export const NATURAL_PIECE_TRIES = 25;
  * Probabilité que la nouvelle pièce soit tirée au hasard sans vérifier qu'elle rentre.
  * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
  */
-export const RANDOM_REFILL_CHANCE = 0.06;
+export const RANDOM_REFILL_CHANCE = 0.045;
 
 /**
  * Période de grâce : pendant les premières formes de la partie, pas de pièce au hasard.

@@ -18,6 +18,22 @@ describe('formes et cellules', () => {
     for (const cell of c.cells.values()) expect(cell.area).toBeGreaterThanOrEqual(0.25 - 1e-6);
   });
 
+  it('chaque petit bout agrandit une seule case voisine : une case = une tuile', () => {
+    const rng = new Rng(11);
+    for (let n = 0; n < 200; n++) {
+      const s = firstShape(rng);
+      for (const [key, a] of s.touched) {
+        if (s.cells.has(key)) continue;
+        expect(a).toBeLessThan(0.25);
+        const owner = s.ownerOf.get(key);
+        expect(owner).toBeDefined();
+        const [i, j] = key.split(',').map(Number);
+        const o = s.cells.get(owner!)!;
+        expect(Math.abs(o.i - i) + Math.abs(o.j - j)).toBe(1);
+      }
+    }
+  });
+
   it('une case carrée se pose sur n’importe quelle case libre, bords pointus ou arrondis compris', () => {
     const game = new Game(5);
     const single = { id: 0, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active, source: [] };

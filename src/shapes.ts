@@ -2,7 +2,9 @@
 //
 // La grille : la cellule (i, j) est le carré [i, i+1] × [j, j+1] en « unités monde ».
 // Chaque forme est convexe. Pour chaque cellule, on calcule le morceau « cellule ∩ forme » :
-// s'il fait au moins 25 % de la cellule, la cellule appartient à la forme.
+// s'il fait au moins 25 % de la cellule, la cellule appartient à la forme (une demi-case le long
+// d'un arrondi est donc une vraie case, qu'on remplit comme les autres). Les bouts plus petits
+// ne sont pas des cases : chacun agrandit légèrement la case voisine.
 
 import { MIN_CELL_FRACTION } from './config';
 import {
@@ -121,12 +123,14 @@ export class Shape {
    */
   readonly touched: Map<string, number>;
   /**
-   * Bouts de forme trop petits pour être une case, rattachés à une case voisine :
-   * clé de la case → bouts voisins qui la suivent. Chaque bout reste une petite tuile à part
-   * (la grille reste régulière), mais il prend l'état de sa case : crème quand elle est vide,
-   * couleur de la forme quand elle est remplie. Plus de trou ni de coin peint d'avance.
+   * Bouts de forme trop petits pour être une case (moins de 25 %), rattachés à une case voisine :
+   * clé de la case → bouts voisins. La tuile de la case s'étend un peu sur ses bouts : une
+   * case = une seule tuile, légèrement plus grande. Une pièce de 2 cases remplit 2 tuiles,
+   * et il ne reste ni mini-carré ni trou le long des arrondis.
    */
   readonly absorbed: Map<string, { i: number; j: number }[]>;
+  /** Clé d'un petit bout → clé de la case qui l'a absorbé. */
+  readonly ownerOf: Map<string, string>;
   readonly box: { x0: number; y0: number; x1: number; y1: number };
   private insetCache = new Map<number, Poly>();
 
@@ -139,6 +143,8 @@ export class Shape {
     this.cells = cells;
     this.touched = touched;
     this.absorbed = absorbed;
+    this.ownerOf = new Map();
+    for (const [key, list] of absorbed) for (const b of list) this.ownerOf.set(cellKey(b.i, b.j), key);
   }
 
   /** Contour rétréci de d (en unités monde). */
@@ -168,17 +174,29 @@ export class Shape {
   }
 
   /**
-   * Tuile dessinée pour la case (i, j) (ou un petit bout) : (case ∩ forme) réduite du gap g.
-   * Revient à couper le carré rétréci de g/2 par la forme rétrécie de g/2.
+   * Tuile dessinée pour la case (i, j) : (case et ses petits bouts) ∩ forme, réduite du gap g.
+   * Revient à couper le rectangle rétréci de g/2 par la forme rétrécie de g/2. Plusieurs
+   * polygones seulement si la case a des bouts sur deux côtés ; ensemble, une seule tuile.
    */
-  tile(i: number, j: number, g: number): Poly {
+  tile(i: number, j: number, g: number): Poly[] {
     const h = g / 2;
-    return clipRect(this.polygon(h), i + h, j + h, i + 1 - h, j + 1 - h);
+    const p = this.polygon(h);
+    return this.rects(i, j)
+      .map((r) => clipRect(p, r.i0 + h, r.j0 + h, r.i1 + 1 - h, r.j1 + 1 - h))
+      .filter((q) => q.length >= 3);
   }
 
-  /** Morceau exact de la cellule (i, j) dans la forme (sans gap). */
-  piece(i: number, j: number): Poly {
-    return clipRect(this.outline, i, j, i + 1, j + 1);
+  /** Morceau exact de la case (i, j) dans la forme, petits bouts compris (sans gap). */
+  piece(i: number, j: number): Poly[] {
+    return this.rects(i, j)
+      .map((r) => clipRect(this.outline, r.i0, r.j0, r.i1 + 1, r.j1 + 1))
+      .filter((q) => q.length >= 3);
+  }
+
+  /** Case à laquelle appartient la cellule de grille (i, j) : elle-même, sa case, ou aucune. */
+  cellAt(i: number, j: number): string | undefined {
+    const key = cellKey(i, j);
+    return this.cells.has(key) ? key : this.ownerOf.get(key);
   }
 }
 
