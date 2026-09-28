@@ -46,8 +46,9 @@ export const OVERLAP_MAX = 0.2;
 /**
  * Probabilité qu'une nouvelle forme vienne se coller contre la précédente (bord contre bord,
  * sans espace), plutôt que de la chevaucher. Donne une figure serrée, comme une affiche.
+ * S'y ajoutent les formes noires, qui se collent toujours (le noir ne chevauche jamais).
  */
-export const ADJACENT_SHAPE_CHANCE = 0.35;
+export const ADJACENT_SHAPE_CHANCE = 0.25;
 
 /**
  * Probabilité de tirer une pièce de 1, 2, 3 ou 4 cellules.
@@ -67,7 +68,7 @@ export const NATURAL_PIECE_TRIES = 25;
  * Probabilité que la nouvelle pièce soit tirée au hasard sans vérifier qu'elle rentre.
  * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
  */
-export const RANDOM_REFILL_CHANCE = 0.045;
+export const RANDOM_REFILL_CHANCE = 0.055;
 
 /**
  * Période de grâce : pendant les premières formes de la partie, pas de pièce au hasard.

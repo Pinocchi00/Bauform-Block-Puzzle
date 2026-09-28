@@ -2,6 +2,7 @@
 
 import {
   BONUS_PER_SHAPE_CELL,
+  COLORS,
   EXACT_PIECE_CHANCE,
   GRACE_SHAPES,
   NATURAL_PIECE_TRIES,
@@ -60,6 +61,8 @@ export class Game {
    * par une forme (1 = case pleine pour toutes les formes qui la touchent).
    */
   private figureTouched = new Map<string, number>();
+  /** Cases touchées par les formes noires terminées (rien ne les chevauche). */
+  private blackTouched = new Set<string>();
   figureBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Cellules remplies de la forme active (chevauchement compris). */
   filled = new Set<string>();
@@ -160,9 +163,19 @@ export class Game {
     for (const key of done.cells.keys()) this.figure.add(key);
     for (const [key, a] of done.touched) {
       this.figureTouched.set(key, Math.min(a, this.figureTouched.get(key) ?? 1));
+      if (done.color === COLORS.black) this.blackTouched.add(key);
     }
     const lastColors = this.shapes.slice(-2).map((s) => s.color);
-    const next = nextShape(this.rng, done, lastColors, this.figure, this.figureBox, this.aspect, this.figureTouched);
+    const next = nextShape(
+      this.rng,
+      done,
+      lastColors,
+      this.figure,
+      this.figureBox,
+      this.aspect,
+      this.figureTouched,
+      this.blackTouched,
+    );
     this.shapes.push(next);
     const b = this.figureBox;
     this.figureBox = {

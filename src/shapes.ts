@@ -2,9 +2,9 @@
 //
 // La grille : la cellule (i, j) est le carré [i, i+1] × [j, j+1] en « unités monde ».
 // Chaque forme est convexe. Pour chaque cellule, on calcule le morceau « cellule ∩ forme » :
-// s'il fait au moins 25 % de la cellule, la cellule appartient à la forme (une demi-case le long
-// d'un arrondi est donc une vraie case, qu'on remplit comme les autres). Les bouts plus petits
-// ne sont pas des cases : chacun agrandit légèrement la case voisine.
+// s'il fait au moins 25 % de la cellule, c'est une case de la forme (une demi-case le long d'un
+// arrondi se remplit comme les autres). Les tailles des formes sont choisies pour que la courbe
+// ne laisse jamais de bout plus petit (voir `clean`) : une case = une tuile, grille régulière.
 
 import { MIN_CELL_FRACTION } from './config';
 import {
@@ -102,14 +102,6 @@ function transform(p: Pt, rot: number, ox: number, oy: number): Pt {
   return { x: x + ox, y: y + oy };
 }
 
-/** Rectangle en cases : de (i0, j0) à (i1, j1) inclus. */
-export interface CellRect {
-  i0: number;
-  j0: number;
-  i1: number;
-  j1: number;
-}
-
 export class Shape {
   readonly spec: ShapeSpec;
   readonly color: string;
@@ -123,14 +115,10 @@ export class Shape {
    */
   readonly touched: Map<string, number>;
   /**
-   * Bouts de forme trop petits pour être une case (moins de 25 %), rattachés à une case voisine :
-   * clé de la case → bouts voisins. La tuile de la case s'étend un peu sur ses bouts : une
-   * case = une seule tuile, légèrement plus grande. Une pièce de 2 cases remplit 2 tuiles,
-   * et il ne reste ni mini-carré ni trou le long des arrondis.
+   * Vrai si la courbe ne laisse aucun bout de moins de 25 % d'une case : chaque morceau de
+   * la forme est alors une vraie case. Le générateur n'utilise que des formes « propres ».
    */
-  readonly absorbed: Map<string, { i: number; j: number }[]>;
-  /** Clé d'un petit bout → clé de la case qui l'a absorbé. */
-  readonly ownerOf: Map<string, string>;
+  readonly clean: boolean;
   readonly box: { x0: number; y0: number; x1: number; y1: number };
   private insetCache = new Map<number, Poly>();
 
@@ -139,12 +127,10 @@ export class Shape {
     this.color = color;
     this.outline = this.polygon(0);
     this.box = bounds(this.outline);
-    const { cells, touched, absorbed } = computeCells(this.outline);
+    const { cells, touched } = computeCells(this.outline);
     this.cells = cells;
     this.touched = touched;
-    this.absorbed = absorbed;
-    this.ownerOf = new Map();
-    for (const [key, list] of absorbed) for (const b of list) this.ownerOf.set(cellKey(b.i, b.j), key);
+    this.clean = touched.size === cells.size;
   }
 
   /** Contour rétréci de d (en unités monde). */
@@ -159,51 +145,23 @@ export class Shape {
   }
 
   /**
-   * Zone couverte par la case (i, j) et les petits bouts qu'elle entraîne, en rectangles
-   * (pour les aplats de la fin, sans joint visible).
+   * Tuile dessinée pour la case (i, j) : (case ∩ forme) réduite du gap g.
+   * Revient à couper le carré rétréci de g/2 par la forme rétrécie de g/2.
    */
-  rects(i: number, j: number): CellRect[] {
-    const extra = this.absorbed.get(cellKey(i, j));
-    if (!extra) return [{ i0: i, j0: j, i1: i, j1: j }];
-    return extra.map((e) => ({
-      i0: Math.min(i, e.i),
-      j0: Math.min(j, e.j),
-      i1: Math.max(i, e.i),
-      j1: Math.max(j, e.j),
-    }));
-  }
-
-  /**
-   * Tuile dessinée pour la case (i, j) : (case et ses petits bouts) ∩ forme, réduite du gap g.
-   * Revient à couper le rectangle rétréci de g/2 par la forme rétrécie de g/2. Plusieurs
-   * polygones seulement si la case a des bouts sur deux côtés ; ensemble, une seule tuile.
-   */
-  tile(i: number, j: number, g: number): Poly[] {
+  tile(i: number, j: number, g: number): Poly {
     const h = g / 2;
-    const p = this.polygon(h);
-    return this.rects(i, j)
-      .map((r) => clipRect(p, r.i0 + h, r.j0 + h, r.i1 + 1 - h, r.j1 + 1 - h))
-      .filter((q) => q.length >= 3);
+    return clipRect(this.polygon(h), i + h, j + h, i + 1 - h, j + 1 - h);
   }
 
-  /** Morceau exact de la case (i, j) dans la forme, petits bouts compris (sans gap). */
-  piece(i: number, j: number): Poly[] {
-    return this.rects(i, j)
-      .map((r) => clipRect(this.outline, r.i0, r.j0, r.i1 + 1, r.j1 + 1))
-      .filter((q) => q.length >= 3);
-  }
-
-  /** Case à laquelle appartient la cellule de grille (i, j) : elle-même, sa case, ou aucune. */
-  cellAt(i: number, j: number): string | undefined {
-    const key = cellKey(i, j);
-    return this.cells.has(key) ? key : this.ownerOf.get(key);
+  /** Morceau exact de la cellule (i, j) dans la forme (sans gap). */
+  piece(i: number, j: number): Poly {
+    return clipRect(this.outline, i, j, i + 1, j + 1);
   }
 }
 
 function computeCells(outline: Poly) {
   const cells = new Map<string, Cell>();
   const touched = new Map<string, number>();
-  const small: { i: number; j: number }[] = [];
   const b = bounds(outline);
   for (let j = Math.floor(b.y0); j < Math.ceil(b.y1); j++) {
     for (let i = Math.floor(b.x0); i < Math.ceil(b.x1); i++) {
@@ -213,19 +171,8 @@ function computeCells(outline: Poly) {
       if (a < 1e-4) continue;
       const key = cellKey(i, j);
       touched.set(key, a);
-      if (a < MIN_CELL_FRACTION - 1e-6) small.push({ i, j });
-      else cells.set(key, { i, j, key, area: a });
+      if (a >= MIN_CELL_FRACTION - 1e-6) cells.set(key, { i, j, key, area: a });
     }
   }
-  // Chaque petit bout est rattaché à la case voisine (côté commun) la plus grande.
-  const absorbed = new Map<string, { i: number; j: number }[]>();
-  for (const s of small) {
-    let best: Cell | undefined;
-    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const c = cells.get(cellKey(s.i + di, s.j + dj));
-      if (c && (!best || c.area > best.area)) best = c;
-    }
-    if (best) absorbed.set(best.key, [...(absorbed.get(best.key) ?? []), s]);
-  }
-  return { cells, touched, absorbed };
+  return { cells, touched };
 }

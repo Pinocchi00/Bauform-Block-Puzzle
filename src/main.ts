@@ -15,6 +15,7 @@ import {
   ICONS,
   decorMarkup,
   figureBounds,
+  posterShapes,
   figureMarkup,
   pieceMarkup,
   posterLinesMarkup,
@@ -185,7 +186,7 @@ function renderDecor() {
  */
 function drawFigureInto(svg: SVGSVGElement, mode: FigureMode, pad: number) {
   const r = svg.getBoundingClientRect();
-  const b = figureBounds(game);
+  const b = figureBounds(posterShapes(game));
   const bw = b.x1 - b.x0;
   const bh = b.y1 - b.y0;
   const s = Math.max(1, Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh, MAX_CELL_PX * 1.5));

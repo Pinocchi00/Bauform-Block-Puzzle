@@ -3,11 +3,11 @@
 
 import { COLORS, GAP_PX, OUTLINE_PX } from './config';
 import type { Game, Piece } from './game';
-import { polyPath } from './geometry';
+import { area, bounds, clipConvex, polyPath, type Poly } from './geometry';
 import type { Rng } from './rng';
 import { cellKey, type Shape } from './shapes';
 
-/** 'play' : en jeu. 'end' : écran de fin (dernière forme en pointillés). 'poster' : plein écran. */
+/** 'play' : en jeu. 'end' : écran de fin. 'poster' : plein écran. */
 export type FigureMode = 'play' | 'end' | 'poster';
 
 // Les tuiles d'une forme ne changent pas : on garde leurs chemins en mémoire.
@@ -20,7 +20,7 @@ function tilePath(shape: Shape, key: string, g: number): string {
   let d = cache.get(id);
   if (d === undefined) {
     const [i, j] = key.split(',').map(Number);
-    d = shape.tile(i, j, g).map((p) => polyPath(p)).join('');
+    d = polyPath(shape.tile(i, j, g));
     cache.set(id, d);
   }
   return d;
@@ -32,9 +32,18 @@ function tilesPath(shape: Shape, keys: Iterable<string>, g: number): string {
   return d;
 }
 
-/** Rectangle qui englobe la figure. */
-export function figureBounds(game: Game) {
-  const shapes = game.shapes;
+/**
+ * Formes de l'affiche : seulement les formes terminées. La forme inachevée qui a causé la
+ * défaite n'y figure pas (pas de trou ni de défaut). Si aucune forme n'a été terminée, la
+ * première forme sert d'affiche.
+ */
+export function posterShapes(game: Game): Shape[] {
+  const done = game.shapes.slice(0, -1);
+  return done.length ? done : [game.shapes[0]];
+}
+
+/** Rectangle qui englobe des formes. */
+export function figureBounds(shapes: Shape[]) {
   return {
     x0: Math.min(...shapes.map((s) => s.box.x0)),
     y0: Math.min(...shapes.map((s) => s.box.y0)),
@@ -43,80 +52,84 @@ export function figureBounds(game: Game) {
   };
 }
 
-/**
- * Forme terminée : un aplat uni de sa couleur. Entre elles, les formes terminées se
- * superposent comme de l'encre (« multiply ») : là où elles se chevauchent, les couleurs
- * se mélangent, comme sur les affiches.
- */
-function flatShape(shape: Shape): string {
-  return `<path fill="${shape.color}" style="mix-blend-mode:multiply" d="${polyPath(shape.outline)}"/>`;
+/** Deux couleurs superposées comme deux encres (« multiply ») : 255 × (a/255) × (b/255). */
+export function inkMix(a: string, b: string): string {
+  const ch = (c: string, k: number) => parseInt(c.slice(1 + 2 * k, 3 + 2 * k), 16);
+  let out = '#';
+  for (let k = 0; k < 3; k++) out += Math.round((ch(a, k) * ch(b, k)) / 255).toString(16).padStart(2, '0');
+  return out;
 }
 
+const boxesMeet = (p: { x0: number; y0: number; x1: number; y1: number }, q: typeof p) =>
+  p.x0 < q.x1 && q.x0 < p.x1 && p.y0 < q.y1 && q.y0 < p.y1;
+
+// Les formes terminées ne changent pas : on garde leur dessin, indexé par la dernière forme.
+const inkCache = new WeakMap<Shape, string>();
+
 /**
- * Aplat uni de la forme limité à certaines cases (sans joints visibles entre elles).
- * Sert pour la forme inachevée à la fin : les cases vides restent des trous.
+ * Formes terminées : des aplats unis. Là où elles se chevauchent, les couleurs se mélangent
+ * comme de l'encre, comme sur les affiches. Le mélange est calculé ici (les formes sont
+ * convexes, leurs intersections aussi) plutôt que confié au navigateur : même rendu partout,
+ * sans effet de transparence qui peut mal s'afficher sur certains téléphones.
  */
-function cellsFlat(shape: Shape, keys: Iterable<string>, color: string, id: string): string {
-  const e = 0.002;
-  let rects = '';
-  for (const key of keys) {
-    const c = shape.cells.get(key);
-    if (!c) continue;
-    for (const r of shape.rects(c.i, c.j)) {
-      rects += `<rect x="${r.i0 - e}" y="${r.j0 - e}" width="${r.i1 - r.i0 + 1 + 2 * e}" height="${r.j1 - r.j0 + 1 + 2 * e}"/>`;
+function inkMarkup(shapes: Shape[]): string {
+  if (!shapes.length) return '';
+  const cached = inkCache.get(shapes[shapes.length - 1]);
+  if (cached !== undefined) return cached;
+  // Couche k : les zones communes à k+1 formes, dessinées par-dessus les couches d'avant.
+  const layers: string[] = [];
+  const visit = (poly: Poly, color: string, last: number, depth: number) => {
+    layers[depth] = (layers[depth] ?? '') + `<path fill="${color}" d="${polyPath(poly)}"/>`;
+    if (depth >= 3) return;
+    const box = bounds(poly);
+    for (let k = last + 1; k < shapes.length; k++) {
+      if (!boxesMeet(box, shapes[k].box)) continue;
+      const q = clipConvex(poly, shapes[k].outline);
+      if (q.length < 3 || area(q) < 1e-4) continue;
+      visit(q, inkMix(color, shapes[k].color), k, depth + 1);
     }
-  }
-  if (!rects) return '';
-  return (
-    `<clipPath id="${id}">${rects}</clipPath>` +
-    `<path fill="${color}" style="mix-blend-mode:multiply" clip-path="url(#${id})" d="${polyPath(shape.outline)}"/>`
-  );
+  };
+  shapes.forEach((s, i) => visit(s.outline, s.color, i, 0));
+  const out = layers.join('');
+  inkCache.set(shapes[shapes.length - 1], out);
+  return out;
 }
 
 /**
  * La figure, en unités monde (1 = une cellule). g = gap des tuiles en unités monde.
  *
  * En jeu, la forme en cours est une grille de tuiles opaques et nettes : crème si la case est
- * vide, couleur de la forme si elle est remplie (la zone qui chevauche la figure compte déjà
- * comme remplie). Les formes terminées sont masquées à l'intérieur : aucune autre forme ne
- * vient dessiner une courbe ou un escalier dans la grille, et rien de ce qu'on pose ne paraît
- * transparent. Une fois la forme finie, elle devient un aplat et les chevauchements
- * apparaissent dans leur vraie géométrie, les couleurs mêlées comme de l'encre.
+ * vide, couleur de la forme si on l'a remplie. Les cases déjà couvertes par la figure au départ
+ * prennent la couleur qu'elles auront sur l'affiche (le mélange des encres). Les formes
+ * terminées sont découpées autour de la forme en cours : aucune ne vient dessiner une courbe
+ * ou un escalier dans la grille. Une fois la forme finie, elle devient un aplat.
+ * À la fin (écran de fin, affiche), seules les formes terminées sont dessinées.
  * @param id préfixe unique (deux figures peuvent être dans la page en même temps)
  */
 export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'): string {
-  const last = game.shapes.length - 1;
+  if (mode !== 'play') return `<g>${inkMarkup(posterShapes(game))}</g>`;
+
   const active = game.active;
-  let done = '<g style="isolation:isolate">';
-  for (let idx = 0; idx < last; idx++) done += flatShape(game.shapes[idx]);
-
-  if (mode !== 'play') {
-    // Affiche : les formes terminées, puis ce qui a été rempli de la dernière forme.
-    done += cellsFlat(active, game.filled, active.color, id + '-last');
-    done += '</g>';
-    if (mode === 'end') {
-      done += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
-    }
-    return `<g>${done}</g>`;
-  }
-  done += '</g>';
-
+  const done = game.shapes.slice(0, -1);
   // Tuiles de la forme en cours, regroupées par couleur : une tuile par case.
-  const filled: string[] = [];
-  const empty: string[] = [];
-  for (const c of active.cells.values()) (game.filled.has(c.key) ? filled : empty).push(c.key);
+  const groups = new Map<string, string[]>();
+  const add = (color: string, key: string) => groups.set(color, [...(groups.get(color) ?? []), key]);
+  for (const c of active.cells.values()) {
+    if (!game.filled.has(c.key)) add(COLORS.shapeInside, c.key);
+    else if (!game.prefilled.has(c.key)) add(active.color, c.key);
+    else add(done.filter((s) => s.cells.has(c.key)).reduce((m, s) => inkMix(m, s.color), active.color), c.key);
+  }
   let out = '<g>';
-  if (filled.length) out += `<path fill="${active.color}" d="${tilesPath(active, filled, g)}"/>`;
-  out += `<path fill="${COLORS.shapeInside}" d="${tilesPath(active, empty, g)}"/>`;
-  // Formes terminées, masquées à l'intérieur de la forme en cours.
-  const b = figureBounds(game);
-  const m = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 10;
-  const [x, y, w, h] = [b.x0 - m, b.y0 - m, b.x1 - b.x0 + 2 * m, b.y1 - b.y0 + 2 * m];
-  out +=
-    `<mask id="${id}-hole" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}">` +
-    `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>` +
-    `<path d="${polyPath(active.outline)}" fill="#000"/></mask>` +
-    `<g mask="url(#${id}-hole)">${done}</g>`;
+  for (const [color, keys] of groups) out += `<path fill="${color}" d="${tilesPath(active, keys, g)}"/>`;
+  if (done.length) {
+    // Formes terminées, découpées autour de la forme en cours (tout sauf son intérieur).
+    const b = figureBounds(game.shapes);
+    const m = Math.max(b.x1 - b.x0, b.y1 - b.y0) + 10;
+    const frame = `M${b.x0 - m} ${b.y0 - m}H${b.x1 + m}V${b.y1 + m}H${b.x0 - m}Z`;
+    out +=
+      `<clipPath id="${id}-out"><path clip-rule="evenodd" d="${frame}${polyPath(active.outline)}"/></clipPath>` +
+      `<g clip-path="url(#${id}-out)">${inkMarkup(done)}</g>`;
+  }
   out += `<path d="${polyPath(active.outline)}" fill="none" stroke="${COLORS.black}" stroke-width="${OUTLINE_PX}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
   return out + '</g>';
 }
@@ -129,11 +142,12 @@ export function figureMarkup(game: Game, g: number, mode: FigureMode, id = 'fig'
  * Tirés au hasard à partir de la seed : chaque partie donne une composition différente.
  */
 export function posterLinesMarkup(game: Game, rng: Rng): string {
-  const b = figureBounds(game);
+  const shapes = posterShapes(game);
+  const b = figureBounds(shapes);
   const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
   const far = size * 20;
   const r = (a: number, c: number) => a + rng.next() * (c - a);
-  const boxes = game.shapes.map((s) => s.box);
+  const boxes = shapes.map((s) => s.box);
   const cx = (b.x0 + b.x1) / 2;
   const cy = (b.y0 + b.y1) / 2;
   // Bord de forme le plus proche d'une position voulue (les traits s'appuient sur les formes).
@@ -208,26 +222,19 @@ export function previewMarkup(piece: Piece, ax: number, ay: number, g: number): 
   for (const c of piece.cells) {
     const i = ax + c.dx;
     const j = ay + c.dy;
-    tiles += shape.tile(i, j, g).map((p) => polyPath(p)).join('');
-    // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce
-    // (ni la case elle-même, quand sa tuile est faite de deux morceaux).
-    for (const poly of shape.piece(i, j)) {
-      for (let k = 0; k < poly.length; k++) {
-        const p = poly[k];
-        const q = poly[(k + 1) % poly.length];
-        const mx = (p.x + q.x) / 2;
-        const my = (p.y + q.y) / 2;
-        let sides: [number, number][] = [];
-        if (Math.abs(p.x - q.x) < eps && Math.abs(p.x - Math.round(p.x)) < eps) {
-          const x = Math.round(p.x);
-          sides = [[x - 1, Math.floor(my)], [x, Math.floor(my)]];
-        } else if (Math.abs(p.y - q.y) < eps && Math.abs(p.y - Math.round(p.y)) < eps) {
-          const y = Math.round(p.y);
-          sides = [[Math.floor(mx), y - 1], [Math.floor(mx), y]];
-        }
-        if (sides.length && sides.every(([si, sj]) => inPiece.has(shape.cellAt(si, sj) ?? ''))) continue;
-        edges += `M${p.x} ${p.y}L${q.x} ${q.y}`;
-      }
+    tiles += polyPath(shape.tile(i, j, g));
+    // Contour : on ne garde que les côtés qui ne touchent pas une autre case de la pièce.
+    const poly = shape.piece(i, j);
+    for (let k = 0; k < poly.length; k++) {
+      const p = poly[k];
+      const q = poly[(k + 1) % poly.length];
+      let neighbour: string | null = null;
+      if (Math.abs(p.x - q.x) < eps && Math.abs(p.x - (i + 1)) < eps) neighbour = cellKey(i + 1, j);
+      else if (Math.abs(p.x - q.x) < eps && Math.abs(p.x - i) < eps) neighbour = cellKey(i - 1, j);
+      else if (Math.abs(p.y - q.y) < eps && Math.abs(p.y - (j + 1)) < eps) neighbour = cellKey(i, j + 1);
+      else if (Math.abs(p.y - q.y) < eps && Math.abs(p.y - j) < eps) neighbour = cellKey(i, j - 1);
+      if (neighbour && inPiece.has(neighbour)) continue;
+      edges += `M${p.x} ${p.y}L${q.x} ${q.y}`;
     }
   }
   return (

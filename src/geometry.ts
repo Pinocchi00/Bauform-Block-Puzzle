@@ -49,6 +49,21 @@ export function clipRect(poly: Poly, x0: number, y0: number, x1: number, y1: num
   return p;
 }
 
+/** Intersection de deux polygones convexes : on découpe le premier par chaque côté du second. */
+export function clipConvex(poly: Poly, clip: Poly): Poly {
+  const s = signedArea(clip) > 0 ? 1 : -1;
+  let out = poly;
+  for (let i = 0; i < clip.length && out.length >= 3; i++) {
+    const p = clip[i];
+    const q = clip[(i + 1) % clip.length];
+    // Garde le côté intérieur du bord p → q.
+    const nx = s * (q.y - p.y);
+    const ny = -s * (q.x - p.x);
+    out = clipHalfPlane(out, nx, ny, nx * p.x + ny * p.y);
+  }
+  return out;
+}
+
 /** Points d'un cercle (polygone très fin, invisible à l'œil). */
 export function circlePoly(cx: number, cy: number, r: number, segments = 256): Poly {
   const pts: Poly = [];

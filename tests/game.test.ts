@@ -18,18 +18,25 @@ describe('formes et cellules', () => {
     for (const cell of c.cells.values()) expect(cell.area).toBeGreaterThanOrEqual(0.25 - 1e-6);
   });
 
-  it('chaque petit bout agrandit une seule case voisine : une case = une tuile', () => {
-    const rng = new Rng(11);
-    for (let n = 0; n < 200; n++) {
-      const s = firstShape(rng);
-      for (const [key, a] of s.touched) {
-        if (s.cells.has(key)) continue;
-        expect(a).toBeLessThan(0.25);
-        const owner = s.ownerOf.get(key);
-        expect(owner).toBeDefined();
-        const [i, j] = key.split(',').map(Number);
-        const o = s.cells.get(owner!)!;
-        expect(Math.abs(o.i - i) + Math.abs(o.j - j)).toBe(1);
+  it('les formes tirées sont « propres » : chaque bout de forme est une vraie case', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const rng = new Rng(seed);
+      let prev = firstShape(rng);
+      const figure = new Set(prev.cells.keys());
+      const box = { ...prev.box };
+      for (let k = 0; k < 10; k++) {
+        for (const [key, a] of prev.touched) {
+          expect(prev.cells.has(key)).toBe(true);
+          expect(a).toBeGreaterThanOrEqual(0.25 - 1e-6);
+        }
+        prev = nextShape(rng, prev, [], figure, box, 0.46);
+        for (const key of prev.cells.keys()) figure.add(key);
+        Object.assign(box, {
+          x0: Math.min(box.x0, prev.box.x0),
+          y0: Math.min(box.y0, prev.box.y0),
+          x1: Math.max(box.x1, prev.box.x1),
+          y1: Math.max(box.y1, prev.box.y1),
+        });
       }
     }
   });
@@ -162,10 +169,10 @@ describe('partie', () => {
         const shared = [...cur.touched.keys()].filter((key) => touched.has(key)).length;
         if (shared === 0) {
           adjacent++;
-          // Collée : les rectangles englobants se touchent.
+          // Collée : les rectangles englobants se touchent (à moins d'une demi-case près).
           const gx = Math.max(prev.box.x0 - cur.box.x1, cur.box.x0 - prev.box.x1);
           const gy = Math.max(prev.box.y0 - cur.box.y1, cur.box.y0 - prev.box.y1);
-          expect(Math.max(gx, gy)).toBeLessThanOrEqual(1e-9);
+          expect(Math.abs(Math.max(gx, gy))).toBeLessThan(0.5);
         } else {
           overlapping++;
           expect(onPrev / cur.cells.size).toBeGreaterThanOrEqual(0.1 - 1e-9);

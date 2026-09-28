@@ -2,6 +2,7 @@
 // Elles chevauchent un peu la précédente, ou se collent contre elle : une figure serrée.
 
 import {
+  COLORS,
   OVERLAP_MAX,
   OVERLAP_MIN,
   ADJACENT_SHAPE_CHANCE,
@@ -17,6 +18,9 @@ import { Shape, cellKey, type ShapeKind, type ShapeSpec } from './shapes';
 const KINDS: ShapeKind[] = ['triangle', 'circle', 'halfDisc', 'quarterDisc', 'bullet', 'square', 'rect'];
 const KIND_WEIGHTS = [1.4, 1, 1, 1, 0.9, 0.7, 0.8];
 
+/** Deux formes « collées » : écart entre leurs rectangles englobants de moins de ça (en cases). */
+const ADJACENT_GAP = 0.5;
+
 /** Nombre minimum de cellules à remplir dans une nouvelle forme. */
 const MIN_FREE_CELLS = 6;
 
@@ -25,27 +29,28 @@ function randomSpec(rng: Rng, avoid?: ShapeKind): ShapeSpec {
   if (kind === avoid) kind = KINDS[rng.weighted(KIND_WEIGHTS)];
   let a = 0;
   let b = 0;
+  // Les rayons des arrondis sont choisis (parfois pas tout à fait entiers) pour que la courbe
+  // ne coupe jamais une case en un bout de moins de 25 % : la grille reste régulière.
   switch (kind) {
     case 'triangle':
       a = rng.int(4, 8);
       b = a;
       // Parfois une pente plus douce ou plus raide (côtés dans un rapport 2).
-      if (rng.chance(0.3)) {
-        if (a <= 5) b = a * 2;
-        else b = Math.round(a / 2);
+      if (a !== 7 && rng.chance(0.3)) {
+        b = a <= 5 ? a * 2 : a / 2;
         if (rng.chance(0.5)) [a, b] = [b, a];
       }
       break;
     case 'circle':
-      // b = 1 : centre au milieu d'une cellule (rayon en x,5), sinon sur un coin (rayon entier).
-      b = rng.chance(0.5) ? 1 : 0;
-      a = b === 1 ? rng.pick([1.5, 2.5, 3.5]) : rng.int(2, 3);
+      // b = 1 : centre au milieu d'une cellule, sinon sur un coin.
+      b = rng.chance(0.35) ? 1 : 0;
+      a = b === 1 ? 2.08 : rng.pick([2, 2.78]);
       break;
     case 'halfDisc':
-      a = rng.int(3, 4);
+      a = rng.pick([2.78, 3.6]);
       break;
     case 'quarterDisc':
-      a = rng.int(4, 6);
+      a = rng.pick([3.6, 5]);
       break;
     case 'bullet':
       b = rng.pick([2, 4]);
@@ -75,7 +80,7 @@ export function firstShape(rng: Rng): Shape {
   for (;;) {
     const shape = new Shape(randomSpec(rng), pickColor(rng));
     const n = shape.cells.size;
-    if (n >= 14 && n <= 30 && fitsSpan(shape)) return shape;
+    if (n >= 14 && n <= 30 && shape.clean && fitsSpan(shape)) return shape;
   }
 }
 
@@ -101,6 +106,9 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
  * @param aspect largeur / hauteur de la zone de jeu à l'écran
  * @param touched cases touchées par la figure (même d'un petit bout), avec la plus petite
  *   part couverte par une forme
+ * @param blackTouched cases touchées par les formes noires. Le noir recouvre toutes les autres
+ *   encres : un chevauchement avec du noir ferait un « coin noir ». Une forme noire se colle
+ *   donc toujours contre la figure, et aucune forme ne chevauche une forme noire.
  */
 export function nextShape(
   rng: Rng,
@@ -110,12 +118,15 @@ export function nextShape(
   figureBox: Box,
   aspect: number,
   touched: Map<string, number> = new Map([...figure].map((k) => [k, 1])),
+  blackTouched: Set<string> = new Set(),
 ): Shape {
+  const color = pickColor(rng, avoidColors);
+  const canOverlap = color !== COLORS.black;
   const adjacentFirst = rng.chance(ADJACENT_SHAPE_CHANCE);
   for (let attempt = 0; attempt < 400; attempt++) {
     const base = new Shape(randomSpec(rng, previous.spec.kind), '');
     const n = base.cells.size;
-    if (n < SHAPE_MIN_CELLS || n > SHAPE_MAX_CELLS || !fitsSpan(base)) continue;
+    if (n < SHAPE_MIN_CELLS || n > SHAPE_MAX_CELLS || !base.clean || !fitsSpan(base)) continue;
 
     const fitOf = (dx: number, dy: number) => {
       const box = {
@@ -134,7 +145,8 @@ export function nextShape(
 
     // Au-delà de 300 essais (très rare), on accepte de se coller n'importe où contre la figure.
     const target = attempt < 300 ? previous.box : figureBox;
-    const overlap = () => (attempt < 300 ? overlapOptions(base, previous, figure, touched, fitOf) : []);
+    const overlap = () =>
+      canOverlap && attempt < 300 ? overlapOptions(base, previous, figure, touched, blackTouched, fitOf) : [];
     const adjacent = () => adjacentOptions(base, target, touched, fitOf);
     let options = adjacentFirst ? adjacent() : overlap();
     if (!options.length) options = adjacentFirst ? overlap() : adjacent();
@@ -143,7 +155,7 @@ export function nextShape(
     options.sort((p, q) => q.fit - p.fit);
     const best = options.slice(0, Math.max(1, Math.ceil(options.length * 0.06)));
     const { dx, dy } = rng.pick(best);
-    return new Shape({ ...base.spec, ox: dx, oy: dy }, pickColor(rng, avoidColors));
+    return new Shape({ ...base.spec, ox: dx, oy: dy }, color);
   }
   throw new Error('Impossible de placer une nouvelle forme');
 }
@@ -157,13 +169,14 @@ const keyOf = (k: string, dx: number, dy: number) => {
 
 /**
  * Positions où la forme chevauche la précédente de 10 à 20 % de ses cases, sans être
- * recouverte à plus de ~30 % par l'ensemble de la figure (chevauchement tel qu'on le voit).
+ * recouverte à plus de 25 % par l'ensemble de la figure (chevauchement tel qu'on le voit).
  */
 function overlapOptions(
   base: Shape,
   previous: Shape,
   figure: Set<string>,
   touched: Map<string, number>,
+  blackTouched: Set<string>,
   fitOf: (dx: number, dy: number) => number,
 ): Option[] {
   const bb = base.box;
@@ -181,10 +194,17 @@ function overlapOptions(
       }
       const ratio = onPrevious / n;
       if (ratio < OVERLAP_MIN || ratio > OVERLAP_MAX) continue;
+      // Les formes plus anciennes ne recouvrent presque rien de plus que la précédente.
+      if (onFigure / n > OVERLAP_MAX + 0.05) continue;
       if (n - onFigure < MIN_FREE_CELLS) continue;
       let visible = 0;
-      for (const k of base.touched.keys()) if (touched.has(keyOf(k, dx, dy))) visible++;
-      if (visible / base.touched.size > OVERLAP_MAX + 0.1) continue;
+      let onBlack = false;
+      for (const k of base.touched.keys()) {
+        const moved = keyOf(k, dx, dy);
+        if (touched.has(moved)) visible++;
+        if (blackTouched.has(moved)) onBlack = true;
+      }
+      if (onBlack || visible / base.touched.size > OVERLAP_MAX + 0.05) continue;
       options.push({ dx, dy, fit: fitOf(dx, dy) });
     }
   }
@@ -192,8 +212,10 @@ function overlapOptions(
 }
 
 /**
- * Positions où la forme est collée contre la cible (bord contre bord de leurs rectangles,
- * face à face sur au moins deux cases), sans toucher aucune autre forme de la figure.
+ * Positions où la forme est collée contre la cible : leurs rectangles se touchent, face à face
+ * sur au moins deux cases, sans toucher aucune case de la figure. Les arrondis de rayon non
+ * entier ne tombent pas pile sur la grille : on accepte un jour de moins d'une demi-case, en
+ * préférant le plus petit.
  */
 function adjacentOptions(
   base: Shape,
@@ -203,13 +225,13 @@ function adjacentOptions(
 ): Option[] {
   const bb = base.box;
   const options: Option[] = [];
-  for (let dy = Math.floor(target.y0 - bb.y1); dy <= Math.ceil(target.y1 - bb.y0); dy++) {
-    for (let dx = Math.floor(target.x0 - bb.x1); dx <= Math.ceil(target.x1 - bb.x0); dx++) {
+  for (let dy = Math.floor(target.y0 - bb.y1) - 1; dy <= Math.ceil(target.y1 - bb.y0) + 1; dy++) {
+    for (let dx = Math.floor(target.x0 - bb.x1) - 1; dx <= Math.ceil(target.x1 - bb.x0) + 1; dx++) {
       // Écart entre les deux rectangles englobants, horizontalement et verticalement.
       const gx = Math.max(target.x0 - (bb.x1 + dx), bb.x0 + dx - target.x1);
       const gy = Math.max(target.y0 - (bb.y1 + dy), bb.y0 + dy - target.y1);
-      const sideBySide = Math.abs(gx) < 1e-9 && gy <= -2;
-      const aboveBelow = Math.abs(gy) < 1e-9 && gx <= -2;
+      const sideBySide = Math.abs(gx) < ADJACENT_GAP && gy <= -2;
+      const aboveBelow = Math.abs(gy) < ADJACENT_GAP && gx <= -2;
       if (!sideBySide && !aboveBelow) continue;
       let free = true;
       for (const k of base.touched.keys()) {
@@ -218,7 +240,8 @@ function adjacentOptions(
           break;
         }
       }
-      if (free) options.push({ dx, dy, fit: fitOf(dx, dy) });
+      const gap = Math.abs(sideBySide ? gx : gy);
+      if (free) options.push({ dx, dy, fit: fitOf(dx, dy) * (1 - gap) });
     }
   }
   return options;
