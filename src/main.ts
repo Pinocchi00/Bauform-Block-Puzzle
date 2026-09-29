@@ -161,8 +161,6 @@ function renderTray() {
       : '';
     slot.classList.toggle('held', drag?.slot === i);
     slot.classList.toggle('selected', selected === i);
-    // Pièce qui ne rentre plus nulle part : le joueur voit ce que sa pose a bloqué.
-    slot.classList.toggle('blocked', !!piece && !game.fits(piece));
   });
 }
 
@@ -170,8 +168,8 @@ function renderScore() {
   scoreEl.textContent = fmt(game.score);
 }
 
-function showGain(gain: number) {
-  gainEl.textContent = '+' + fmt(gain);
+function showGain(gain: number, closed = false) {
+  gainEl.textContent = '+' + fmt(gain) + (closed ? ' · sans bonus' : '');
   gainEl.classList.remove('show');
   void gainEl.offsetWidth; // relance l'animation
   gainEl.classList.add('show');
@@ -401,17 +399,21 @@ function placePiece(slot: number, anchor: { x: number; y: number }) {
   selected = null;
   const res = game.place(slot, anchor.x, anchor.y);
   if (!res) return;
-  // La note monte à mesure que la forme se remplit ; une forme finie joue son carillon.
-  if (!res.completed) {
+  // La note monte à mesure que la forme se remplit ; une forme finie pile joue son carillon.
+  // Une forme refermée d'elle-même (bloqué en fin de forme) n'a ni carillon ni bonus.
+  // La forme qui vient d'être finie est l'avant-dernière (une nouvelle vient d'apparaître).
+  const done = game.shapes[game.shapes.length - 2];
+  if (res.closed) {
+    feedback.place(1, done.color);
+  } else if (!res.completed) {
     const todo = game.active.cells.size - game.prefilled.size;
     feedback.place((game.filled.size - game.prefilled.size) / todo, game.active.color);
   }
-  showGain(res.gain);
+  showGain(res.gain, res.closed);
   renderScore();
   renderFigure();
   if (res.completed) {
-    // La forme qui vient d'être finie est l'avant-dernière (une nouvelle vient d'apparaître).
-    feedback.complete(game.shapes[game.shapes.length - 2].color);
+    if (!res.closed) feedback.complete(done.color);
     fitCamera(true);
   }
   if (res.gameOver) {

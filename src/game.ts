@@ -6,10 +6,11 @@ import {
   GRACE_SHAPES,
   DIFFICULTY_RAMP_END,
   DIFFICULTY_RAMP_START,
-  END_PIECE_MAX_CELLS,
-  END_PIECE_MAX_CELLS_LATE,
+  CLOSE_MAX_CELLS,
+  CLOSE_MAX_CELLS_LATE,
   PIECE_SIZE_WEIGHTS,
   PIECE_SIZE_WEIGHTS_LATE,
+  PIECE_TRIES,
   POINTS_PER_CELL,
 } from './config';
 import { firstShape, nextShape } from './generator';
@@ -28,13 +29,13 @@ export interface Piece {
   w: number;
   h: number;
   shape: Shape;
-  /** Cases libres de la forme d'où la pièce a été tirée (vide pour une pièce au hasard). */
-  source: string[];
 }
 
 export interface MoveResult {
   gain: number;
   completed: boolean;
+  /** La forme s'est refermée d'elle-même (sans bonus) : voir closeMax. */
+  closed: boolean;
   gameOver: boolean;
 }
 
@@ -164,6 +165,7 @@ export class Game {
     this.piecesPlaced++;
     let gain = POINTS_PER_CELL * piece.cells.length;
     let completed = false;
+    let closed = false;
 
     if (this.filled.size === this.active.cells.size) {
       // Forme pleine : bonus, puis nouvelle forme et nouvelles pièces.
@@ -176,10 +178,16 @@ export class Game {
       this.score += gain;
       // Toujours 3 pièces en main : la pièce posée est remplacée tout de suite.
       this.hand[slot] = this.refillPiece();
+      if (!this.hand.some((p) => p && this.fits(p)) && this.canClose()) {
+        // Bloqué avec seulement quelques cases libres : la forme se referme, sans bonus.
+        completed = closed = true;
+        this.shapesCompleted++;
+        this.startNextShape();
+      }
     }
 
     this.over = !this.hand.some((p) => p && this.fits(p));
-    return { gain, completed, gameOver: this.over };
+    return { gain, completed, closed, gameOver: this.over };
   }
 
   /** « Réessayer la forme » : la forme active repart de son début. */
@@ -225,38 +233,27 @@ export class Game {
   }
 
   /**
-   * Pièce de remplacement, tirée honnêtement :
+   * Pièce de remplacement, tirée comme dans un vrai jeu de pièces :
    *  1. on tire sa taille (1 à 4 cases), sans regarder la forme ;
-   *  2. on donne une pièce ordinaire de cette taille qui rentre quelque part, si possible ;
-   *  3. sinon (tous les espaces libres sont plus petits que la pièce), la pièce ne rentre pas :
-   *     c'est ce qui fait perdre. Ça n'arrive que si l'espace libre est coupé en petits morceaux,
-   *     donc à cause des poses du joueur.
-   * Exceptions qui protègent le joueur :
-   *  - fin de forme : quand il ne reste que quelques cases libres (voir endPieceMax), la pièce
-   *    remplit exactement un des espaces restants. Qui garde l'espace libre d'un seul tenant
-   *    ne peut donc pas perdre ;
-   *  - début de partie (GRACE_SHAPES premières formes) : si plus rien ne rentre, un morceau
-   *    découpé dans les cases libres. Pas de défaite possible.
-   * Le jeu ne choisit jamais une pièce pour éviter au joueur de laisser des trous : c'est à lui
-   * de le faire.
+   *  2. on essaie des pièces ordinaires de cette taille (au plus PIECE_TRIES, dans le désordre)
+   *     et on garde la première qui rentre quelque part ;
+   *  3. si aucune ne rentre, la pièce est donnée quand même.
+   * Pas de pièce taillée sur mesure, pas de taille choisie selon les trous. Dans un grand espace
+   * libre et compact, presque toute taille rentre ; dans des petits trous ou des couloirs,
+   * rarement. Perdre vient donc surtout de la façon dont on a rempli la forme.
    */
   private refillPiece(): Piece {
     const size = this.rng.weighted(this.sizeWeights()) + 1;
-    const natural = this.naturalPiece(size);
-    if (natural) return natural;
-
-    const end = this.endPiece();
-    if (end) return end;
-
-    const handFits = this.hand.some((p) => p && this.fits(p));
-    if (this.shapesCompleted < GRACE_SHAPES && !handFits) {
-      const reserved = new Set(
-        this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
-      );
-      const cut = this.makePiece(reserved, true) ?? this.makePiece(new Set(), true);
-      if (cut) return cut;
+    const inHand = new Set(this.hand.map((p) => p && pieceSignature(p)));
+    const tries = this.rng.shuffle([...PIECES[size]]).slice(0, PIECE_TRIES);
+    let double: Piece | null = null;
+    for (const cells of tries) {
+      const piece = this.buildPiece(cells);
+      if (!this.fits(piece)) continue;
+      if (!inHand.has(pieceSignature(piece))) return piece;
+      double ??= piece;
     }
-    return this.buildPiece(this.rng.pick(PIECES[size]), []);
+    return double ?? this.buildPiece(tries[0]);
   }
 
   /**
@@ -269,28 +266,24 @@ export class Game {
     return PIECE_SIZE_WEIGHTS.map((w, i) => w + (PIECE_SIZE_WEIGHTS_LATE[i] - w) * t);
   }
 
-  /** Nombre de cases libres en dessous duquel la fin de forme est offerte (voir endPiece). */
-  endPieceMax(): number {
-    return Math.round(END_PIECE_MAX_CELLS + (END_PIECE_MAX_CELLS_LATE - END_PIECE_MAX_CELLS) * this.lateness());
+  /** Nombre de cases libres jusqu'auquel une forme bloquée se referme d'elle-même (voir canClose). */
+  closeMax(): number {
+    return Math.round(CLOSE_MAX_CELLS + (CLOSE_MAX_CELLS_LATE - CLOSE_MAX_CELLS) * this.lateness());
+  }
+
+  /**
+   * Vrai si, bloqué, on peut refermer la forme plutôt que perdre : il reste au plus closeMax()
+   * cases libres, ou on est encore dans les GRACE_SHAPES premières formes.
+   */
+  private canClose(): boolean {
+    const left = this.active.cells.size - this.filled.size;
+    return left <= this.closeMax() || this.shapesCompleted < GRACE_SHAPES;
   }
 
   /** Avancée dans la montée en difficulté : 0 avant DIFFICULTY_RAMP_START, 1 à partir de DIFFICULTY_RAMP_END. */
   private lateness(): number {
     const ramp = (this.shapesCompleted - DIFFICULTY_RAMP_START) / (DIFFICULTY_RAMP_END - DIFFICULTY_RAMP_START);
     return Math.max(0, Math.min(1, ramp));
-  }
-
-  /** Pièce ordinaire de cette taille qui rentre quelque part (pas un double de la main si possible). */
-  private naturalPiece(size: number): Piece | null {
-    const inHand = new Set(this.hand.map((p) => p && pieceSignature(p)));
-    let double: PieceCell[] | null = null;
-    for (const cells of this.rng.shuffle([...PIECES[size]])) {
-      const piece = this.buildPiece(cells, []);
-      if (!this.fits(piece)) continue;
-      if (!inHand.has(pieceSignature(piece))) return piece;
-      double ??= cells;
-    }
-    return double && this.buildPiece(double, []);
   }
 
   /** Cases libres de la forme active, groupées en espaces d'un seul tenant. */
@@ -316,29 +309,13 @@ export class Game {
     return regions;
   }
 
-  /**
-   * Fin de forme : s'il ne reste que quelques cases libres (END_PIECE_MAX_CELLS au plus),
-   * la pièce qui remplit exactement un de ces espaces (le plus petit d'abord).
-   */
-  private endPiece(): Piece | null {
-    const regions = this.freeRegions().sort((a, b) => a.length - b.length);
-    const left = regions.reduce((n, r) => n + r.length, 0);
-    if (!regions.length || left > this.endPieceMax()) return null;
-    return this.buildPiece(
-      regions[0].map((c) => ({ dx: c.i, dy: c.j })),
-      regions[0].map((c) => c.key),
-    );
-  }
-
-  private buildPiece(raw: PieceCell[], source: string[]): Piece {
-    const cells = normalize(raw);
+  private buildPiece(cells: PieceCell[]): Piece {
     return {
       id: this.nextPieceId++,
       cells,
       w: Math.max(...cells.map((c) => c.dx)) + 1,
       h: Math.max(...cells.map((c) => c.dy)) + 1,
       shape: this.active,
-      source,
     };
   }
 
@@ -346,74 +323,5 @@ export class Game {
   private dealHand(): void {
     this.hand = [];
     for (let s = 0; s < HAND_SIZE; s++) this.hand.push(this.refillPiece());
-  }
-
-  /** Fait grandir un groupe case par case, parmi les cases libres voisines. */
-  private growGroup(start: Cell, size: number, freeKeys: Set<string>): Cell[] {
-    const shape = this.active;
-    const group: Cell[] = [start];
-    const inGroup = new Set([start.key]);
-    while (group.length < size) {
-      const frontier: Cell[] = [];
-      for (const c of group) {
-        for (const [di, dj] of DIRS) {
-          const key = cellKey(c.i + di, c.j + dj);
-          if (freeKeys.has(key) && !inGroup.has(key)) frontier.push(shape.cells.get(key)!);
-        }
-      }
-      if (!frontier.length) break;
-      const next = this.rng.pick(frontier);
-      group.push(next);
-      inGroup.add(next.key);
-    }
-    return group;
-  }
-
-  /**
-   * Pièce découpée dans un groupe de cases libres (hors cases réservées), en dernier recours
-   * quand plus rien ne rentre. Elle part de préférence d'un bord ou d'un cul-de-sac.
-   * @param allowSingle accepte un cube seul ; sinon renvoie null s'il n'y a que des cases isolées
-   */
-  private makePiece(reserved: Set<string>, allowSingle: boolean): Piece | null {
-    const shape = this.active;
-    const free = [...shape.cells.values()].filter((c) => !this.filled.has(c.key) && !reserved.has(c.key));
-    if (!free.length) return null;
-
-    let size = this.rng.weighted(this.sizeWeights()) + 1;
-    if (!allowSingle) size = Math.max(2, size);
-    const freeKeys = new Set(free.map((c) => c.key));
-    const neighbours = (c: Cell) =>
-      DIRS.filter(([di, dj]) => freeKeys.has(cellKey(c.i + di, c.j + dj))).length;
-    const onEdge = (c: Cell) =>
-      c.area < 1 || DIRS.some(([di, dj]) => !shape.cells.has(cellKey(c.i + di, c.j + dj)));
-
-    const connected = free.filter((c) => neighbours(c) > 0);
-    if (!connected.length && !allowSingle) return null;
-    const starts = connected.length && !(allowSingle && size === 1) ? connected : free;
-    const weights = starts.map((c) => (neighbours(c) === 1 ? 3 : 1) * (onEdge(c) ? 3 : 1));
-
-    // Plusieurs essais : on garde le groupe le plus proche de la taille voulue et qui,
-    // une fois retiré, laisse le moins de cases isolées (futurs cubes seuls).
-    let group: Cell[] = [];
-    let bestScore = Infinity;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const g = this.growGroup(starts[this.rng.weighted(weights)], size, freeKeys);
-      const taken = new Set(g.map((c) => c.key));
-      const isolated = free.filter(
-        (c) => !taken.has(c.key) && DIRS.every(([di, dj]) => {
-          const k = cellKey(c.i + di, c.j + dj);
-          return !freeKeys.has(k) || taken.has(k);
-        }),
-      ).length;
-      const score = (size - g.length) * 10 + isolated * 3;
-      if (score < bestScore) [group, bestScore] = [g, score];
-    }
-    if (group.length < 2 && !allowSingle) return null;
-    for (const c of group) reserved.add(c.key);
-
-    return this.buildPiece(
-      group.map((c) => ({ dx: c.i, dy: c.j })),
-      group.map((c) => c.key),
-    );
   }
 }

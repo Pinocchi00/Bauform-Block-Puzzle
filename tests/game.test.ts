@@ -44,7 +44,7 @@ describe('formes et cellules', () => {
 
   it('une case carrée se pose sur n’importe quelle case libre, bords pointus ou arrondis compris', () => {
     const game = new Game(5);
-    const single = { id: 0, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active, source: [] };
+    const single = { id: 0, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active };
     for (const c of game.active.cells.values()) {
       expect(game.canPlace(single, c.i, c.j)).toBe(!game.filled.has(c.key));
     }
@@ -111,36 +111,72 @@ describe('partie', () => {
     }
   });
 
-  it('les pièces grossissent et la fin de forme offerte rétrécit dans les longues parties', () => {
+  it('les pièces grossissent et une forme bloquée se referme moins facilement dans les longues parties', () => {
     const game = new Game(1);
     const at = (n: number) => {
       game.shapesCompleted = n;
-      return { big: game.sizeWeights()[3], end: game.endPieceMax() };
+      return { big: game.sizeWeights()[3], close: game.closeMax() };
     };
     expect(at(0)).toEqual(at(10));
     expect(at(20).big).toBeGreaterThan(at(10).big);
-    expect(at(10).end).toBe(5);
-    expect(at(35).end).toBe(3);
+    expect(at(10).close).toBe(5);
+    expect(at(35).close).toBe(3);
     expect(at(60)).toEqual(at(35));
   });
 
-  it('avec peu de cases libres, la nouvelle pièce rentre toujours', () => {
-    for (let seed = 1; seed <= 40; seed++) {
+  it('bloqué avec peu de cases libres, la forme se referme d’elle-même, sans bonus', () => {
+    let closings = 0;
+    for (let seed = 1; seed <= 60; seed++) {
       const game = new Game(seed);
-      game.shapesCompleted = GRACE_SHAPES; // hors période de grâce : seule la fin de forme peut aider
-      // On ne laisse libres que quelques cases d'un seul tenant, puis on pose un cube sur l'une d'elles.
+      game.shapesCompleted = GRACE_SHAPES; // hors période de grâce
+      // On ne laisse libres que quelques cases, puis on pose un cube sur l'une d'elles ;
+      // les deux autres pièces sont trop grosses pour rentrer.
       const [region] = game.freeRegions();
-      const keep = new Set(region.slice(0, 1 + (seed % game.endPieceMax())).map((c) => c.key));
+      const keep = new Set(region.slice(0, 2 + (seed % game.closeMax())).map((c) => c.key));
       for (const c of game.active.cells.values()) if (!keep.has(c.key)) game.filled.add(c.key);
-      const target = region[0];
-      const cube: Piece = { id: -1, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active, source: [] };
-      game.hand[0] = cube;
-      const res = game.place(0, target.i, target.j);
-      expect(res).not.toBeNull();
-      if (res!.completed) continue;
-      expect(game.fits(game.hand[0]!)).toBe(true);
-      expect(res!.gameOver).toBe(false);
+      const piece = (cells: { dx: number; dy: number }[]): Piece => ({
+        id: -1,
+        cells,
+        w: Math.max(...cells.map((c) => c.dx)) + 1,
+        h: Math.max(...cells.map((c) => c.dy)) + 1,
+        shape: game.active,
+      });
+      const big = piece([0, 1, 2].flatMap((dy) => [0, 1, 2].map((dx) => ({ dx, dy }))));
+      game.hand = [piece([{ dx: 0, dy: 0 }]), big, big];
+      const shapes = game.shapes.length;
+      const res = game.place(0, region[0].i, region[0].j)!;
+      if (!res.closed) {
+        // La nouvelle pièce rentre : on continue la forme.
+        expect(res.completed || game.hand.some((p) => p && game.fits(p))).toBe(true);
+        continue;
+      }
+      closings++;
+      expect(res.completed).toBe(true);
+      expect(res.gain).toBe(10); // les points du cube, sans bonus de forme
+      expect(res.gameOver).toBe(false);
+      expect(game.shapes.length).toBe(shapes + 1);
     }
+    expect(closings).toBeGreaterThan(10);
+  });
+
+  it('bloqué avec beaucoup de cases libres, on perd', () => {
+    let losses = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const game = new Game(seed);
+      game.shapesCompleted = GRACE_SHAPES;
+      // Forme remplie en damier : il reste beaucoup de cases libres, toutes isolées.
+      for (const c of game.active.cells.values()) if ((c.i + c.j) % 2 === 0) game.filled.add(c.key);
+      const free = [...game.active.cells.values()].filter((c) => !game.filled.has(c.key));
+      if (free.length - 1 <= game.closeMax()) continue;
+      const bar = { id: -1, cells: [0, 1, 2, 3, 4].map((dx) => ({ dx, dy: 0 })), w: 5, h: 1, shape: game.active };
+      game.hand = [{ ...bar, cells: [{ dx: 0, dy: 0 }], w: 1 }, bar, bar];
+      const res = game.place(0, free[0].i, free[0].j)!;
+      // Seul un cube pourrait encore rentrer : sinon, c'est perdu, la forme ne se referme pas.
+      expect(res.closed).toBe(false);
+      expect(res.gameOver).toBe(game.hand[0]!.cells.length !== 1);
+      if (res.gameOver) losses++;
+    }
+    expect(losses).toBeGreaterThan(10);
   });
 
   it('une pose invalide est refusée', () => {
@@ -163,11 +199,11 @@ describe('partie', () => {
     expect(totalShapes).toBeGreaterThan(0);
   });
 
-  it('on ne perd que si on a coupé l’espace libre en morceaux, et jamais pendant la période de grâce', () => {
+  it('on ne perd jamais pendant la période de grâce, ni avec seulement quelques cases libres', () => {
     for (let seed = 1; seed <= 40; seed++) {
       const { game } = playRandomGame(seed);
       expect(game.shapesCompleted).toBeGreaterThanOrEqual(GRACE_SHAPES);
-      expect(game.freeRegions().length).toBeGreaterThanOrEqual(2);
+      expect(game.active.cells.size - game.filled.size).toBeGreaterThan(game.closeMax());
     }
   });
 

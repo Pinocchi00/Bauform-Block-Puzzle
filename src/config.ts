@@ -53,30 +53,37 @@ export const ADJACENT_SHAPE_CHANCE = 0.25;
 /**
  * Probabilité de tirer une pièce de 1, 2, 3 ou 4 cellules.
  * Le cube seul peut arriver à tout moment (environ 1 fois sur 20), pas seulement pour finir.
- *
- * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main). Sa taille est tirée
- * sans regarder la forme ; le jeu donne ensuite une pièce ordinaire (barre, L, T, carré…) de
- * cette taille qui rentre quelque part. S'il n'y en a aucune, parce que l'espace libre est
- * coupé en morceaux trop petits, la pièce ne rentre pas : c'est ce qui fait perdre.
- * Tant que l'espace libre reste d'un seul tenant, on ne peut donc pas perdre : la défaite
- * vient des poses du joueur, pas d'un tirage malchanceux.
  */
 export const PIECE_SIZE_WEIGHTS = [0.05, 0.3, 0.34, 0.31];
 
 /**
- * Fin de forme : quand il ne reste que ce nombre de cases libres (ou moins), la nouvelle pièce
- * remplit exactement un des espaces restants. Sans ça, les dernières cases (souvent deux cases
- * isolées, même pour un bon joueur) demanderaient des cubes par chance.
- * Plus généreux au début (END_PIECE_MAX_CELLS), moins dans les longues parties
- * (END_PIECE_MAX_CELLS_LATE, atteint à DIFFICULTY_RAMP_END formes).
+ * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main). Sa taille est tirée
+ * sans regarder la forme, puis on essaie PIECE_TRIES pièces ordinaires (barre, L, T, carré…) de
+ * cette taille, tirées au hasard : la première qui rentre quelque part est donnée ; si aucune ne
+ * rentre, la pièce est donnée quand même. Le jeu ne taille jamais de pièce sur mesure et ne
+ * choisit pas la taille selon les trous. Dans un espace libre grand et compact, presque toute
+ * taille rentre ; dans des petits trous ou des couloirs, rarement : c'est comme ça qu'on perd.
+ * Plus la valeur est haute, plus le jeu aide. À 19 (le nombre de pièces de 4 cases), toutes les
+ * pièces de la taille tirée sont essayées. Mesuré : en dessous de 8, le hasard redevient décisif
+ * (un bon joueur ne fait plus que 2 fois mieux qu'un joueur au hasard, contre 3,5 fois à 19).
  */
-export const END_PIECE_MAX_CELLS = 5;
-export const END_PIECE_MAX_CELLS_LATE = 3;
+export const PIECE_TRIES = 19;
+
+/**
+ * Fin de forme : si on est bloqué (aucune pièce en main ne rentre) alors qu'il ne reste que ce
+ * nombre de cases libres ou moins, on ne perd pas : la forme se referme d'elle-même, mais sans
+ * le bonus de forme. Finir une forme pile rapporte donc des points ; le jeu ne donne jamais
+ * « la pièce qu'il faut ».
+ * Plus généreux au début (CLOSE_MAX_CELLS), moins dans les longues parties
+ * (CLOSE_MAX_CELLS_LATE, atteint à DIFFICULTY_RAMP_END formes).
+ */
+export const CLOSE_MAX_CELLS = 5;
+export const CLOSE_MAX_CELLS_LATE = 3;
 
 /**
  * Montée en difficulté : à partir de DIFFICULTY_RAMP_START formes terminées, les pièces
- * grossissent doucement (jusqu'aux probabilités PIECE_SIZE_WEIGHTS_LATE) et la fin de forme
- * offerte rétrécit (jusqu'à END_PIECE_MAX_CELLS_LATE), atteints à DIFFICULTY_RAMP_END formes.
+ * grossissent doucement (jusqu'aux probabilités PIECE_SIZE_WEIGHTS_LATE) et une forme bloquée
+ * se referme avec moins de cases libres (CLOSE_MAX_CELLS_LATE), atteints à DIFFICULTY_RAMP_END formes.
  * Il faut jouer de plus en plus serré. Les parties ordinaires ne changent donc pas ; seules
  * les très longues sont raccourcies.
  * Mesuré : sans montée, un joueur appliqué a joué 24 min (114 formes) ; l'affiche devient
@@ -87,8 +94,9 @@ export const DIFFICULTY_RAMP_START = 10;
 export const DIFFICULTY_RAMP_END = 35;
 
 /**
- * Période de grâce : pendant les premières formes de la partie, si plus rien ne rentre, le jeu
- * donne un morceau découpé dans les cases libres : pas de défaite possible. Évite les parties
+ * Période de grâce : pendant les premières formes de la partie, si plus rien ne rentre, la forme
+ * se referme d'elle-même (sans bonus), quel que soit le nombre de cases libres : pas de défaite
+ * possible. Évite les parties
  * de moins d'une minute (mesuré : 44 s et 51 s, avec 1 et 2 formes seulement, frustrantes et
  * avec une affiche presque vide).
  */

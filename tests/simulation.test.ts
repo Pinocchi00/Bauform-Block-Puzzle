@@ -4,6 +4,8 @@
 //  - « soigneux » évite de bloquer ses autres pièces et de laisser des trous isolés ;
 //  - « expert » évite en plus de couper l'espace libre en plusieurs morceaux.
 // Plus l'écart entre les trois est grand, plus la partie dépend du joueur et pas de la chance.
+// « pièces exactes » : part des pièces reçues en fin de forme (8 cases libres ou moins) qui ont
+// exactement la forme d'un des trous. Trop haut, on a l'impression que le jeu donne la bonne pièce.
 
 import { it } from 'vitest';
 import { Game } from '../src/game';
@@ -21,6 +23,16 @@ function isolatedCells(g: Game): number {
   ).length;
 }
 
+/** Vrai si deux groupes de cases ont la même forme (à un décalage près). */
+function sameCells(a: { dx: number; dy: number }[], b: { dx: number; dy: number }[]): boolean {
+  const norm = (cells: { dx: number; dy: number }[]) => {
+    const x = Math.min(...cells.map((c) => c.dx));
+    const y = Math.min(...cells.map((c) => c.dy));
+    return cells.map((c) => c.dx - x + ':' + (c.dy - y)).sort().join(' ');
+  };
+  return norm(a) === norm(b);
+}
+
 type Level = 'au hasard' | 'soigneux' | 'expert';
 
 function play(seed: number, level: Level) {
@@ -29,6 +41,9 @@ function play(seed: number, level: Level) {
   let moves = 0;
   let singles = 0;
   let dealt = 0;
+  let closed = 0;
+  let endPieces = 0;
+  let endExact = 0;
   const seen = new Set<number>();
   while (!g.over && moves < 1000) {
     for (const p of g.hand) {
@@ -57,10 +72,21 @@ function play(seed: number, level: Level) {
         if (score > bestScore) [best, bestScore] = [o, score];
       }
     }
-    g.place(best.slot, best.x, best.y);
+    const shape = g.shapesCompleted;
+    if (g.place(best.slot, best.x, best.y)?.closed) closed++;
+    if (g.shapesCompleted === shape) {
+      const regions = g.freeRegions();
+      if (regions.reduce((n, r) => n + r.length, 0) <= 8) {
+        for (const p of g.hand) {
+          if (!p || seen.has(p.id)) continue;
+          endPieces++;
+          if (regions.some((r) => sameCells(r.map((c) => ({ dx: c.i, dy: c.j })), p.cells))) endExact++;
+        }
+      }
+    }
     moves++;
   }
-  return { shapes: g.shapesCompleted, moves, singles, dealt };
+  return { shapes: g.shapesCompleted, moves, singles, dealt, closed, score: g.score, endPieces, endExact };
 }
 
 it('simulation de parties', () => {
@@ -76,6 +102,9 @@ it('simulation de parties', () => {
       '| médiane', shapes[shapes.length >> 1],
       '| max', shapes[shapes.length - 1],
       '| poses moy', avg((r) => r.moves),
+      '| refermées', ((100 * runs.reduce((a, r) => a + r.closed, 0)) / runs.reduce((a, r) => a + r.shapes, 0)).toFixed(0) + ' %',
+      '| score moy', avg((r) => r.score),
+      '| pièces exactes', ((100 * runs.reduce((a, r) => a + r.endExact, 0)) / runs.reduce((a, r) => a + r.endPieces, 0)).toFixed(0) + ' %',
       '| cubes seuls', (singles * 100).toFixed(1) + ' %',
       '| ≤ 2 formes', runs.filter((r) => r.shapes <= 2).length + '/60',
       '| > 40 formes', runs.filter((r) => r.shapes > 40).length + '/60',
