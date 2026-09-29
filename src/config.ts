@@ -53,46 +53,46 @@ export const ADJACENT_SHAPE_CHANCE = 0.25;
 /**
  * Probabilité de tirer une pièce de 1, 2, 3 ou 4 cellules.
  * Le cube seul peut arriver à tout moment (environ 1 fois sur 20), pas seulement pour finir.
+ *
+ * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main). Sa taille est tirée
+ * sans regarder la forme ; le jeu donne ensuite une pièce ordinaire (barre, L, T, carré…) de
+ * cette taille qui rentre quelque part. S'il n'y en a aucune, parce que l'espace libre est
+ * coupé en morceaux trop petits, la pièce ne rentre pas : c'est ce qui fait perdre.
+ * Tant que l'espace libre reste d'un seul tenant, on ne peut donc pas perdre : la défaite
+ * vient des poses du joueur, pas d'un tirage malchanceux.
  */
 export const PIECE_SIZE_WEIGHTS = [0.05, 0.3, 0.34, 0.31];
 
 /**
- * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main).
- * La nouvelle pièce est une forme ordinaire (barre, L, T, carré…) tirée au hasard, gardée
- * seulement si elle rentre quelque part : elle n'est pas taillée sur mesure pour un trou.
- * On fait jusqu'à NATURAL_PIECE_TRIES essais.
+ * Fin de forme : quand il ne reste que ce nombre de cases libres (ou moins), la nouvelle pièce
+ * remplit exactement un des espaces restants. Sans ça, les dernières cases (souvent deux cases
+ * isolées, même pour un bon joueur) demanderaient des cubes par chance.
+ * Plus généreux au début (END_PIECE_MAX_CELLS), moins dans les longues parties
+ * (END_PIECE_MAX_CELLS_LATE, atteint à DIFFICULTY_RAMP_END formes).
  */
-export const NATURAL_PIECE_TRIES = 25;
+export const END_PIECE_MAX_CELLS = 5;
+export const END_PIECE_MAX_CELLS_LATE = 3;
 
 /**
- * Probabilité que la nouvelle pièce soit tirée au hasard sans vérifier qu'elle rentre.
- * C'est ce qui rend la défaite possible : plus la valeur est haute, plus le jeu est dur.
- */
-export const RANDOM_REFILL_CHANCE = 0.055;
-
-/**
- * Montée en difficulté : à partir de DIFFICULTY_RAMP_START formes terminées, la probabilité
- * ci-dessus grandit doucement, jusqu'à RANDOM_REFILL_CHANCE_MAX à DIFFICULTY_RAMP_END formes.
- * Les parties ordinaires ne changent donc pas ; seules les très longues sont raccourcies.
+ * Montée en difficulté : à partir de DIFFICULTY_RAMP_START formes terminées, les pièces
+ * grossissent doucement (jusqu'aux probabilités PIECE_SIZE_WEIGHTS_LATE) et la fin de forme
+ * offerte rétrécit (jusqu'à END_PIECE_MAX_CELLS_LATE), atteints à DIFFICULTY_RAMP_END formes.
+ * Il faut jouer de plus en plus serré. Les parties ordinaires ne changent donc pas ; seules
+ * les très longues sont raccourcies.
  * Mesuré : sans montée, un joueur appliqué a joué 24 min (114 formes) ; l'affiche devient
  * illisible et la partie ne finit plus. Visé : les bonnes parties s'arrêtent vers 25 à 40 formes.
  */
-export const RANDOM_REFILL_CHANCE_MAX = 0.15;
+export const PIECE_SIZE_WEIGHTS_LATE = [0.02, 0.18, 0.3, 0.5];
 export const DIFFICULTY_RAMP_START = 10;
 export const DIFFICULTY_RAMP_END = 35;
 
 /**
- * Période de grâce : pendant les premières formes de la partie, pas de pièce au hasard, donc
- * pas de défaite possible. Évite les parties de moins d'une minute (mesuré : 44 s et 51 s,
- * avec 1 et 2 formes seulement, frustrantes et avec une affiche presque vide).
+ * Période de grâce : pendant les premières formes de la partie, si plus rien ne rentre, le jeu
+ * donne un morceau découpé dans les cases libres : pas de défaite possible. Évite les parties
+ * de moins d'une minute (mesuré : 44 s et 51 s, avec 1 et 2 formes seulement, frustrantes et
+ * avec une affiche presque vide).
  */
 export const GRACE_SHAPES = 3;
-
-/**
- * Quand plus aucune pièce ne rentre, ni dans la main ni parmi les pièces ordinaires,
- * probabilité de recevoir un morceau découpé dans les cases libres. Sinon, pièce au hasard.
- */
-export const EXACT_PIECE_CHANCE = 1;
 
 /** Score. */
 export const POINTS_PER_CELL = 10;

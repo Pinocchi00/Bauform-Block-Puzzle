@@ -161,6 +161,8 @@ function renderTray() {
       : '';
     slot.classList.toggle('held', drag?.slot === i);
     slot.classList.toggle('selected', selected === i);
+    // Pièce qui ne rentre plus nulle part : le joueur voit ce que sa pose a bloqué.
+    slot.classList.toggle('blocked', !!piece && !game.fits(piece));
   });
 }
 

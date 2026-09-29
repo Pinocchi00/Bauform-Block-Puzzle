@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Game } from '../src/game';
+import { GRACE_SHAPES } from '../src/config';
+import { Game, type Piece } from '../src/game';
 import { firstShape, nextShape } from '../src/generator';
 import { Rng } from '../src/rng';
 import { Shape, cellKey } from '../src/shapes';
@@ -96,18 +97,11 @@ function playCarefulGame(seed: number, maxMoves = 400) {
 }
 
 describe('partie', () => {
-  it('les pièces distribuées rentrent presque toujours au moment où elles arrivent', () => {
-    let fit = 0;
-    let total = 0;
+  it('au début d’une forme, les 3 pièces distribuées rentrent', () => {
     for (let seed = 1; seed <= 60; seed++) {
       const game = new Game(seed);
-      for (const p of game.hand) {
-        total++;
-        if (p && game.fits(p)) fit++;
-      }
+      for (const p of game.hand) expect(p && game.fits(p)).toBe(true);
     }
-    // Seule une petite part est tirée au hasard sans vérification (c'est ce qui permet de perdre).
-    expect(fit / total).toBeGreaterThan(0.85);
   });
 
   it('il y a toujours 3 pièces en main', () => {
@@ -117,18 +111,36 @@ describe('partie', () => {
     }
   });
 
-  it('pas de pièce au hasard au début, puis de plus en plus souvent dans les longues parties', () => {
+  it('les pièces grossissent et la fin de forme offerte rétrécit dans les longues parties', () => {
     const game = new Game(1);
     const at = (n: number) => {
       game.shapesCompleted = n;
-      return game.randomChance();
+      return { big: game.sizeWeights()[3], end: game.endPieceMax() };
     };
-    expect(at(0)).toBe(0);
-    expect(at(2)).toBe(0);
-    expect(at(3)).toBeGreaterThan(0);
-    expect(at(10)).toBe(at(3));
-    expect(at(20)).toBeGreaterThan(at(10));
-    expect(at(60)).toBe(at(35));
+    expect(at(0)).toEqual(at(10));
+    expect(at(20).big).toBeGreaterThan(at(10).big);
+    expect(at(10).end).toBe(5);
+    expect(at(35).end).toBe(3);
+    expect(at(60)).toEqual(at(35));
+  });
+
+  it('avec peu de cases libres, la nouvelle pièce rentre toujours', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const game = new Game(seed);
+      game.shapesCompleted = GRACE_SHAPES; // hors période de grâce : seule la fin de forme peut aider
+      // On ne laisse libres que quelques cases d'un seul tenant, puis on pose un cube sur l'une d'elles.
+      const [region] = game.freeRegions();
+      const keep = new Set(region.slice(0, 1 + (seed % game.endPieceMax())).map((c) => c.key));
+      for (const c of game.active.cells.values()) if (!keep.has(c.key)) game.filled.add(c.key);
+      const target = region[0];
+      const cube: Piece = { id: -1, cells: [{ dx: 0, dy: 0 }], w: 1, h: 1, shape: game.active, source: [] };
+      game.hand[0] = cube;
+      const res = game.place(0, target.i, target.j);
+      expect(res).not.toBeNull();
+      if (res!.completed) continue;
+      expect(game.fits(game.hand[0]!)).toBe(true);
+      expect(res!.gameOver).toBe(false);
+    }
   });
 
   it('une pose invalide est refusée', () => {
@@ -149,6 +161,37 @@ describe('partie', () => {
     }
     // Un joueur au hasard doit quand même finir quelques formes.
     expect(totalShapes).toBeGreaterThan(0);
+  });
+
+  it('on ne perd que si on a coupé l’espace libre en morceaux, et jamais pendant la période de grâce', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const { game } = playRandomGame(seed);
+      expect(game.shapesCompleted).toBeGreaterThanOrEqual(GRACE_SHAPES);
+      expect(game.freeRegions().length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('une nouvelle forme laisse toujours un seul espace libre d’un seul tenant', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const { game } = playCarefulGame(seed, 150);
+      // Chaque forme de la partie, telle qu'elle était à son arrivée.
+      for (let k = 1; k < game.shapes.length; k++) {
+        const covered = new Set(game.shapes.slice(0, k).flatMap((sh) => [...sh.cells.keys()]));
+        const free = [...game.shapes[k].cells.keys()].filter((key) => !covered.has(key));
+        const seen = new Set([free[0]]);
+        const todo = [free[0]];
+        while (todo.length) {
+          const [i, j] = todo.pop()!.split(',').map(Number);
+          for (const key of [cellKey(i + 1, j), cellKey(i - 1, j), cellKey(i, j + 1), cellKey(i, j - 1)]) {
+            if (free.includes(key) && !seen.has(key)) {
+              seen.add(key);
+              todo.push(key);
+            }
+          }
+        }
+        expect(seen.size).toBe(free.length);
+      }
+    }
   });
 
   it('la même seed donne la même partie', () => {

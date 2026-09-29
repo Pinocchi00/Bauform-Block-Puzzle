@@ -1,7 +1,9 @@
 // Simulation : des joueurs automatiques jouent 60 parties chacun, pour estimer la difficulté.
 // Résultat affiché avec : npm run sim
 //  - « au hasard » pose n'importe où (comme un joueur qui ne réfléchit pas) ;
-//  - « soigneux » évite de bloquer ses autres pièces et de laisser des trous isolés.
+//  - « soigneux » évite de bloquer ses autres pièces et de laisser des trous isolés ;
+//  - « expert » évite en plus de couper l'espace libre en plusieurs morceaux.
+// Plus l'écart entre les trois est grand, plus la partie dépend du joueur et pas de la chance.
 
 import { it } from 'vitest';
 import { Game } from '../src/game';
@@ -19,7 +21,9 @@ function isolatedCells(g: Game): number {
   ).length;
 }
 
-function play(seed: number, careful: boolean) {
+type Level = 'au hasard' | 'soigneux' | 'expert';
+
+function play(seed: number, level: Level) {
   const g = new Game(seed, 0.46);
   const rng = new Rng(seed * 31);
   let moves = 0;
@@ -39,12 +43,16 @@ function play(seed: number, careful: boolean) {
       if (p) for (const a of g.anchors(p)) opts.push({ slot, ...a });
     });
     let best = rng.pick(opts);
-    if (careful) {
+    if (level !== 'au hasard') {
       let bestScore = -Infinity;
-      for (const o of rng.shuffle(opts).slice(0, 30)) {
+      for (const o of rng.shuffle(opts).slice(0, level === 'expert' ? 80 : 30)) {
         const saved = new Set(g.filled);
         for (const c of g.hand[o.slot]!.cells) g.filled.add(cellKey(o.x + c.dx, o.y + c.dy));
-        const score = g.hand.filter((p, s) => s !== o.slot && p && g.fits(p)).length * 3 - isolatedCells(g) * 2;
+        let score = g.hand.filter((p, s) => s !== o.slot && p && g.fits(p)).length * 3 - isolatedCells(g) * 2;
+        if (level === 'expert') {
+          const regions = g.freeRegions();
+          score -= Math.max(0, regions.length - 1) * 3 + regions.filter((r) => r.length <= 3).length * 2;
+        }
         g.filled = saved;
         if (score > bestScore) [best, bestScore] = [o, score];
       }
@@ -56,14 +64,14 @@ function play(seed: number, careful: boolean) {
 }
 
 it('simulation de parties', () => {
-  for (const careful of [false, true]) {
-    const runs = Array.from({ length: 60 }, (_, k) => play(k + 1, careful));
+  for (const level of ['au hasard', 'soigneux', 'expert'] as Level[]) {
+    const runs = Array.from({ length: 60 }, (_, k) => play(k + 1, level));
     const avg = (f: (r: (typeof runs)[0]) => number) =>
       (runs.reduce((a, r) => a + f(r), 0) / runs.length).toFixed(1);
     const shapes = runs.map((r) => r.shapes).sort((a, b) => a - b);
     const singles = runs.reduce((a, r) => a + r.singles, 0) / runs.reduce((a, r) => a + r.dealt, 0);
     console.warn(
-      careful ? 'soigneux ' : 'au hasard',
+      level.padEnd(9),
       '| formes moy', avg((r) => r.shapes),
       '| médiane', shapes[shapes.length >> 1],
       '| max', shapes[shapes.length - 1],

@@ -3,14 +3,13 @@
 import {
   BONUS_PER_SHAPE_CELL,
   COLORS,
-  EXACT_PIECE_CHANCE,
   GRACE_SHAPES,
-  NATURAL_PIECE_TRIES,
-  RANDOM_REFILL_CHANCE,
-  RANDOM_REFILL_CHANCE_MAX,
   DIFFICULTY_RAMP_END,
   DIFFICULTY_RAMP_START,
+  END_PIECE_MAX_CELLS,
+  END_PIECE_MAX_CELLS_LATE,
   PIECE_SIZE_WEIGHTS,
+  PIECE_SIZE_WEIGHTS_LATE,
   POINTS_PER_CELL,
 } from './config';
 import { firstShape, nextShape } from './generator';
@@ -51,6 +50,37 @@ const DIRS = [
   [0, 1],
   [0, -1],
 ];
+
+/** Cases remises en coin haut-gauche (0, 0) et triées : deux pièces identiques s'écrivent pareil. */
+function normalize(raw: PieceCell[]): PieceCell[] {
+  const minX = Math.min(...raw.map((c) => c.dx));
+  const minY = Math.min(...raw.map((c) => c.dy));
+  return raw.map((c) => ({ dx: c.dx - minX, dy: c.dy - minY })).sort((p, q) => p.dy - q.dy || p.dx - q.dx);
+}
+
+/**
+ * Toutes les pièces ordinaires de 1 à 4 cases (cube, domino, barres, L, T, carré, S…),
+ * dans toutes leurs orientations : PIECES[n] = les pièces de n cases.
+ */
+const PIECES: PieceCell[][][] = (() => {
+  const bySize: PieceCell[][][] = [[], [[{ dx: 0, dy: 0 }]]];
+  for (let n = 2; n <= 4; n++) {
+    const found = new Map<string, PieceCell[]>();
+    for (const p of bySize[n - 1]) {
+      for (const c of p) {
+        for (const [di, dj] of DIRS) {
+          const x = c.dx + di;
+          const y = c.dy + dj;
+          if (p.some((q) => q.dx === x && q.dy === y)) continue;
+          const cells = normalize([...p, { dx: x, dy: y }]);
+          found.set(cells.map((q) => q.dx + ':' + q.dy).join(' '), cells);
+        }
+      }
+    }
+    bySize.push([...found.values()]);
+  }
+  return bySize;
+})();
 
 export class Game {
   readonly seed: number;
@@ -195,86 +225,113 @@ export class Game {
   }
 
   /**
-   * Pièce de remplacement, tirée comme dans un vrai jeu de pièces :
-   *  1. on tire sa taille (1 à 4 cases ; le cube seul peut arriver à tout moment, rarement) ;
-   *  2. on tire une pièce ordinaire de cette taille (barre, L, T, carré…), gardée si elle rentre
-   *     quelque part, de préférence sans laisser de case isolée ;
-   *  3. si aucune pièce de cette taille ne rentre et qu'une autre pièce en main rentre encore,
-   *     on la donne quand même : rien n'est « taillé » pour finir la forme ;
-   *  4. sinon seulement (plus rien ne rentre), un morceau découpé dans les cases libres.
-   * De temps en temps, une pièce au hasard sans vérification : c'est ce qui rend la défaite
-   * possible. De plus en plus souvent au fil des formes (voir randomChance).
+   * Pièce de remplacement, tirée honnêtement :
+   *  1. on tire sa taille (1 à 4 cases), sans regarder la forme ;
+   *  2. on donne une pièce ordinaire de cette taille qui rentre quelque part, si possible ;
+   *  3. sinon (tous les espaces libres sont plus petits que la pièce), la pièce ne rentre pas :
+   *     c'est ce qui fait perdre. Ça n'arrive que si l'espace libre est coupé en petits morceaux,
+   *     donc à cause des poses du joueur.
+   * Exceptions qui protègent le joueur :
+   *  - fin de forme : quand il ne reste que quelques cases libres (voir endPieceMax), la pièce
+   *    remplit exactement un des espaces restants. Qui garde l'espace libre d'un seul tenant
+   *    ne peut donc pas perdre ;
+   *  - début de partie (GRACE_SHAPES premières formes) : si plus rien ne rentre, un morceau
+   *    découpé dans les cases libres. Pas de défaite possible.
+   * Le jeu ne choisit jamais une pièce pour éviter au joueur de laisser des trous : c'est à lui
+   * de le faire.
    */
-  /**
-   * Probabilité qu'une nouvelle pièce soit tirée au hasard : nulle pendant les premières
-   * formes, puis RANDOM_REFILL_CHANCE, qui monte doucement jusqu'à RANDOM_REFILL_CHANCE_MAX
-   * dans les longues parties.
-   */
-  randomChance(): number {
-    if (this.shapesCompleted < GRACE_SHAPES) return 0;
-    const ramp = (this.shapesCompleted - DIFFICULTY_RAMP_START) / (DIFFICULTY_RAMP_END - DIFFICULTY_RAMP_START);
-    const t = Math.max(0, Math.min(1, ramp));
-    return RANDOM_REFILL_CHANCE + (RANDOM_REFILL_CHANCE_MAX - RANDOM_REFILL_CHANCE) * t;
-  }
-
   private refillPiece(): Piece {
-    const size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
-    if (this.rng.chance(this.randomChance())) return this.randomPiece(size);
+    const size = this.rng.weighted(this.sizeWeights()) + 1;
+    const natural = this.naturalPiece(size);
+    if (natural) return natural;
 
-    // Pas deux fois la même pièce en main, tant que c'est possible.
-    const same = (p: Piece) => {
-      const sig = pieceSignature(p);
-      return this.hand.some((h) => h && pieceSignature(h) === sig);
-    };
-    let fallback: Piece | null = null;
-    for (let t = 0; t < NATURAL_PIECE_TRIES; t++) {
-      const p = this.randomPiece(size);
-      if (t < NATURAL_PIECE_TRIES - 5 && same(p)) continue;
-      const anchors = this.anchors(p);
-      if (!anchors.length) continue;
-      if (anchors.some((a) => this.isolatedAfter(p, a.x, a.y) === 0)) return p;
-      fallback ??= p;
-    }
-    if (fallback) return fallback;
+    const end = this.endPiece();
+    if (end) return end;
 
     const handFits = this.hand.some((p) => p && this.fits(p));
-    if (handFits || !this.rng.chance(EXACT_PIECE_CHANCE)) return this.randomPiece(size);
-    const reserved = new Set(
-      this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
+    if (this.shapesCompleted < GRACE_SHAPES && !handFits) {
+      const reserved = new Set(
+        this.hand.flatMap((p) => (p && p.source.every((k) => !this.filled.has(k)) ? p.source : [])),
+      );
+      const cut = this.makePiece(reserved, true) ?? this.makePiece(new Set(), true);
+      if (cut) return cut;
+    }
+    return this.buildPiece(this.rng.pick(PIECES[size]), []);
+  }
+
+  /**
+   * Probabilités des tailles de pièce (1 à 4 cases) : de PIECE_SIZE_WEIGHTS au début à
+   * PIECE_SIZE_WEIGHTS_LATE dans les longues parties. Les grosses pièces demandent plus de place :
+   * il faut jouer de plus en plus serré.
+   */
+  sizeWeights(): number[] {
+    const t = this.lateness();
+    return PIECE_SIZE_WEIGHTS.map((w, i) => w + (PIECE_SIZE_WEIGHTS_LATE[i] - w) * t);
+  }
+
+  /** Nombre de cases libres en dessous duquel la fin de forme est offerte (voir endPiece). */
+  endPieceMax(): number {
+    return Math.round(END_PIECE_MAX_CELLS + (END_PIECE_MAX_CELLS_LATE - END_PIECE_MAX_CELLS) * this.lateness());
+  }
+
+  /** Avancée dans la montée en difficulté : 0 avant DIFFICULTY_RAMP_START, 1 à partir de DIFFICULTY_RAMP_END. */
+  private lateness(): number {
+    const ramp = (this.shapesCompleted - DIFFICULTY_RAMP_START) / (DIFFICULTY_RAMP_END - DIFFICULTY_RAMP_START);
+    return Math.max(0, Math.min(1, ramp));
+  }
+
+  /** Pièce ordinaire de cette taille qui rentre quelque part (pas un double de la main si possible). */
+  private naturalPiece(size: number): Piece | null {
+    const inHand = new Set(this.hand.map((p) => p && pieceSignature(p)));
+    let double: PieceCell[] | null = null;
+    for (const cells of this.rng.shuffle([...PIECES[size]])) {
+      const piece = this.buildPiece(cells, []);
+      if (!this.fits(piece)) continue;
+      if (!inHand.has(pieceSignature(piece))) return piece;
+      double ??= cells;
+    }
+    return double && this.buildPiece(double, []);
+  }
+
+  /** Cases libres de la forme active, groupées en espaces d'un seul tenant. */
+  freeRegions(): Cell[][] {
+    const shape = this.active;
+    const seen = new Set<string>();
+    const regions: Cell[][] = [];
+    for (const start of shape.cells.values()) {
+      if (this.filled.has(start.key) || seen.has(start.key)) continue;
+      const region = [start];
+      seen.add(start.key);
+      for (let k = 0; k < region.length; k++) {
+        for (const [di, dj] of DIRS) {
+          const next = shape.cells.get(cellKey(region[k].i + di, region[k].j + dj));
+          if (next && !this.filled.has(next.key) && !seen.has(next.key)) {
+            seen.add(next.key);
+            region.push(next);
+          }
+        }
+      }
+      regions.push(region);
+    }
+    return regions;
+  }
+
+  /**
+   * Fin de forme : s'il ne reste que quelques cases libres (END_PIECE_MAX_CELLS au plus),
+   * la pièce qui remplit exactement un de ces espaces (le plus petit d'abord).
+   */
+  private endPiece(): Piece | null {
+    const regions = this.freeRegions().sort((a, b) => a.length - b.length);
+    const left = regions.reduce((n, r) => n + r.length, 0);
+    if (!regions.length || left > this.endPieceMax()) return null;
+    return this.buildPiece(
+      regions[0].map((c) => ({ dx: c.i, dy: c.j })),
+      regions[0].map((c) => c.key),
     );
-    return this.makePiece(reserved, true) ?? this.makePiece(new Set(), true) ?? this.randomPiece(size);
   }
 
-  /** Nombre de cases libres qui resteraient isolées (sans voisine libre) après cette pose. */
-  private isolatedAfter(piece: Piece, ax: number, ay: number): number {
-    const taken = new Set(piece.cells.map((c) => cellKey(ax + c.dx, ay + c.dy)));
-    const free = (k: string) => this.active.cells.has(k) && !this.filled.has(k) && !taken.has(k);
-    let n = 0;
-    for (const c of this.active.cells.values()) {
-      if (!free(c.key)) continue;
-      if (DIRS.every(([di, dj]) => !free(cellKey(c.i + di, c.j + dj)))) n++;
-    }
-    return n;
-  }
-
-  /** Pièce ordinaire au hasard de la taille donnée, sans lien avec les cases libres. */
-  private randomPiece(size: number): Piece {
-    const cells = [{ dx: 0, dy: 0 }];
-    const has = (x: number, y: number) => cells.some((c) => c.dx === x && c.dy === y);
-    while (cells.length < size) {
-      const from = this.rng.pick(cells);
-      const [di, dj] = this.rng.pick(DIRS);
-      if (!has(from.dx + di, from.dy + dj)) cells.push({ dx: from.dx + di, dy: from.dy + dj });
-    }
-    return this.buildPiece(cells, []);
-  }
-
-  private buildPiece(raw: { dx: number; dy: number }[], source: string[]): Piece {
-    const minX = Math.min(...raw.map((c) => c.dx));
-    const minY = Math.min(...raw.map((c) => c.dy));
-    const cells = raw
-      .map((c) => ({ dx: c.dx - minX, dy: c.dy - minY }))
-      .sort((p, q) => p.dy - q.dy || p.dx - q.dx);
+  private buildPiece(raw: PieceCell[], source: string[]): Piece {
+    const cells = normalize(raw);
     return {
       id: this.nextPieceId++,
       cells,
@@ -322,7 +379,7 @@ export class Game {
     const free = [...shape.cells.values()].filter((c) => !this.filled.has(c.key) && !reserved.has(c.key));
     if (!free.length) return null;
 
-    let size = this.rng.weighted(PIECE_SIZE_WEIGHTS) + 1;
+    let size = this.rng.weighted(this.sizeWeights()) + 1;
     if (!allowSingle) size = Math.max(2, size);
     const freeKeys = new Set(free.map((c) => c.key));
     const neighbours = (c: Cell) =>

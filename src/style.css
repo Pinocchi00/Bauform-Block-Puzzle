@@ -212,6 +212,11 @@ button:focus-visible,
   background: var(--black);
 }
 
+/* Pièce qui ne rentre plus nulle part dans la forme. */
+.slot.blocked svg {
+  opacity: 0.3;
+}
+
 /* Pièce choisie d'un simple toucher : légèrement agrandie, en attente d'un toucher sur la forme. */
 .slot.selected svg {
   transform: scale(1.18);

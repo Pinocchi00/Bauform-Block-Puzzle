@@ -168,6 +168,33 @@ const keyOf = (k: string, dx: number, dy: number) => {
 };
 
 /**
+ * Vrai si les cases libres de la forme (hors chevauchement) forment un seul espace d'un seul
+ * tenant. Le chevauchement ne laisse donc jamais de trou isolé : les seuls trous sont ceux que
+ * le joueur fait lui-même.
+ */
+function freeInOnePiece(base: Shape, figure: Set<string>, dx: number, dy: number): boolean {
+  const free = new Set<string>();
+  for (const k of base.cells.keys()) {
+    const moved = keyOf(k, dx, dy);
+    if (!figure.has(moved)) free.add(moved);
+  }
+  const start = free.values().next().value;
+  if (start === undefined) return false;
+  const seen = new Set([start]);
+  const todo = [start];
+  while (todo.length) {
+    const [i, j] = todo.pop()!.split(',').map(Number);
+    for (const k of [cellKey(i + 1, j), cellKey(i - 1, j), cellKey(i, j + 1), cellKey(i, j - 1)]) {
+      if (free.has(k) && !seen.has(k)) {
+        seen.add(k);
+        todo.push(k);
+      }
+    }
+  }
+  return seen.size === free.size;
+}
+
+/**
  * Positions où la forme chevauche la précédente de 10 à 20 % de ses cases, sans être
  * recouverte à plus de 25 % par l'ensemble de la figure (chevauchement tel qu'on le voit).
  */
@@ -197,6 +224,7 @@ function overlapOptions(
       // Les formes plus anciennes ne recouvrent presque rien de plus que la précédente.
       if (onFigure / n > OVERLAP_MAX + 0.05) continue;
       if (n - onFigure < MIN_FREE_CELLS) continue;
+      if (!freeInOnePiece(base, figure, dx, dy)) continue;
       let visible = 0;
       let onBlack = false;
       for (const k of base.touched.keys()) {
