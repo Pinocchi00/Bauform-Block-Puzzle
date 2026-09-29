@@ -168,8 +168,8 @@ function renderScore() {
   scoreEl.textContent = fmt(game.score);
 }
 
-function showGain(gain: number, closed = false) {
-  gainEl.textContent = '+' + fmt(gain) + (closed ? ' · sans bonus' : '');
+function showGain(gain: number) {
+  gainEl.textContent = '+' + fmt(gain);
   gainEl.classList.remove('show');
   void gainEl.offsetWidth; // relance l'animation
   gainEl.classList.add('show');
@@ -399,21 +399,17 @@ function placePiece(slot: number, anchor: { x: number; y: number }) {
   selected = null;
   const res = game.place(slot, anchor.x, anchor.y);
   if (!res) return;
-  // La note monte à mesure que la forme se remplit ; une forme finie pile joue son carillon.
-  // Une forme refermée d'elle-même (bloqué en fin de forme) n'a ni carillon ni bonus.
-  // La forme qui vient d'être finie est l'avant-dernière (une nouvelle vient d'apparaître).
-  const done = game.shapes[game.shapes.length - 2];
-  if (res.closed) {
-    feedback.place(1, done.color);
-  } else if (!res.completed) {
+  // La note monte à mesure que la forme se remplit ; une forme finie joue son carillon.
+  if (!res.completed) {
     const todo = game.active.cells.size - game.prefilled.size;
     feedback.place((game.filled.size - game.prefilled.size) / todo, game.active.color);
   }
-  showGain(res.gain, res.closed);
+  showGain(res.gain);
   renderScore();
   renderFigure();
   if (res.completed) {
-    if (!res.closed) feedback.complete(done.color);
+    // La forme qui vient d'être finie est l'avant-dernière (une nouvelle vient d'apparaître).
+    feedback.complete(game.shapes[game.shapes.length - 2].color);
     fitCamera(true);
   }
   if (res.gameOver) {

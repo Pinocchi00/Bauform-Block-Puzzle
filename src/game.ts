@@ -6,14 +6,17 @@ import {
   GRACE_SHAPES,
   DIFFICULTY_RAMP_END,
   DIFFICULTY_RAMP_START,
-  CLOSE_MAX_CELLS,
-  CLOSE_MAX_CELLS_LATE,
+  END_SIZE_WEIGHTS,
+  END_SMALL_CELLS,
+  HELP_CHANCE,
+  HELP_CHANCE_LATE,
   PIECE_SIZE_WEIGHTS,
   PIECE_SIZE_WEIGHTS_LATE,
   PIECE_TRIES,
   POINTS_PER_CELL,
 } from './config';
 import { firstShape, nextShape } from './generator';
+import { canTile } from './planner';
 import { Rng } from './rng';
 import { Shape, cellKey, type Cell } from './shapes';
 
@@ -34,16 +37,24 @@ export interface Piece {
 export interface MoveResult {
   gain: number;
   completed: boolean;
-  /** La forme s'est refermée d'elle-même (sans bonus) : voir closeMax. */
-  closed: boolean;
   gameOver: boolean;
 }
 
 export const HAND_SIZE = 3;
 
 /** Forme d'une pièce, sous forme de texte (deux pièces identiques ont la même). */
+function signature(cells: PieceCell[]): string {
+  return cells.map((c) => c.dx + ':' + c.dy).join(' ');
+}
 function pieceSignature(p: Piece): string {
-  return p.cells.map((c) => c.dx + ':' + c.dy).join(' ');
+  return signature(p.cells);
+}
+
+/** Les sous-ensembles d'une liste, du plus grand au plus petit (liste vide en dernier). */
+function subsets<T>(items: T[]): T[][] {
+  const all: T[][] = [[]];
+  for (const item of items) all.push(...all.map((sub) => [...sub, item]));
+  return all.sort((a, b) => b.length - a.length);
 }
 const DIRS = [
   [1, 0],
@@ -165,7 +176,6 @@ export class Game {
     this.piecesPlaced++;
     let gain = POINTS_PER_CELL * piece.cells.length;
     let completed = false;
-    let closed = false;
 
     if (this.filled.size === this.active.cells.size) {
       // Forme pleine : bonus, puis nouvelle forme et nouvelles pièces.
@@ -178,16 +188,10 @@ export class Game {
       this.score += gain;
       // Toujours 3 pièces en main : la pièce posée est remplacée tout de suite.
       this.hand[slot] = this.refillPiece();
-      if (!this.hand.some((p) => p && this.fits(p)) && this.canClose()) {
-        // Bloqué avec seulement quelques cases libres : la forme se referme, sans bonus.
-        completed = closed = true;
-        this.shapesCompleted++;
-        this.startNextShape();
-      }
     }
 
     this.over = !this.hand.some((p) => p && this.fits(p));
-    return { gain, completed, closed, gameOver: this.over };
+    return { gain, completed, gameOver: this.over };
   }
 
   /** « Réessayer la forme » : la forme active repart de son début. */
@@ -233,17 +237,74 @@ export class Game {
   }
 
   /**
-   * Pièce de remplacement, tirée comme dans un vrai jeu de pièces :
-   *  1. on tire sa taille (1 à 4 cases), sans regarder la forme ;
-   *  2. on essaie des pièces ordinaires de cette taille (au plus PIECE_TRIES, dans le désordre)
-   *     et on garde la première qui rentre quelque part ;
-   *  3. si aucune ne rentre, la pièce est donnée quand même.
-   * Pas de pièce taillée sur mesure, pas de taille choisie selon les trous. Dans un grand espace
-   * libre et compact, presque toute taille rentre ; dans des petits trous ou des couloirs,
-   * rarement. Perdre vient donc surtout de la façon dont on a rempli la forme.
+   * Pièce de remplacement. Sa taille (1 à 4 cases) est tirée sans regarder la forme, puis :
+   *  - aide discrète (le plus souvent, voir helpChance) : une pièce ordinaire de cette taille qui
+   *    garde la forme finissable avec les pièces déjà en main (voir helpedPiece) ;
+   *  - sinon, une pièce ordinaire de cette taille qui rentre quelque part (voir naturalPiece).
+   * Aucune pièce n'est taillée sur mesure.
    */
   private refillPiece(): Piece {
     const size = this.rng.weighted(this.sizeWeights()) + 1;
+    const helped = this.rng.chance(this.helpChance()) ? this.helpedPiece(size) : null;
+    return helped ?? this.naturalPiece(size);
+  }
+
+  /**
+   * Probabilité que l'aide discrète joue : toujours pendant la période de grâce, puis
+   * HELP_CHANCE, qui baisse jusqu'à HELP_CHANCE_LATE dans les longues parties.
+   */
+  helpChance(): number {
+    if (this.shapesCompleted < GRACE_SHAPES) return 1;
+    return HELP_CHANCE + (HELP_CHANCE_LATE - HELP_CHANCE) * this.lateness();
+  }
+
+  /**
+   * Aide discrète : une pièce ordinaire telle qu'il existe encore une façon de finir la forme
+   * avec les pièces en main, celle-ci, et d'autres pièces ordinaires. Les pièces qui finiront la
+   * forme arrivent donc bien avant la fin, mêlées aux autres.
+   * Ce qui ne doit pas se voir :
+   *  - une pièce qui a exactement la forme d'un trou seulement en dernier recours ;
+   *  - vers la fin de la forme, les pièces sont un peu plus petites (voir END_SMALL_CELLS) : elles
+   *    arrivent avant que les derniers trous existent et laissent de la marge ;
+   *  - quand les pièces en main suffisent déjà à finir, une petite pièce ordinaire qui rentre, en
+   *    réserve, plutôt qu'une pièce choisie.
+   * Si le joueur a posé une pièce de travers, on garde dans le plan le plus possible de pièces
+   * de sa main. Renvoie null si rien ne convient (on donne alors une pièce ordinaire).
+   */
+  private helpedPiece(size: number): Piece | null {
+    const free = new Set([...this.active.cells.keys()].filter((k) => !this.filled.has(k)));
+    const hand = this.hand.filter((p): p is Piece => !!p).map((p) => p.cells);
+    const fillers = [...PIECES[4], ...PIECES[3], ...PIECES[2]];
+    const kept = subsets(hand).find((sub) => canTile(free, sub, fillers));
+    if (!kept) return null;
+    const left = free.size - kept.reduce((n, p) => n + p.length, 0);
+
+    const weights = this.sizeWeights();
+    const sizes = [size];
+    while (sizes.length < 4) sizes.push(this.rng.weighted(weights.map((w, i) => (sizes.includes(i + 1) ? 0 : w))) + 1);
+
+    const holes = new Set(this.freeRegions().map((r) => signature(normalize(r.map((c) => ({ dx: c.i, dy: c.j }))))));
+    const inHand = new Set(hand.map(signature));
+    // Dans l'ordre de préférence : pièce nouvelle en main, pièce déjà en main, et seulement en
+    // dernier recours une pièce qui a la forme d'un trou.
+    let double: PieceCell[] | null = null;
+    let hole: PieceCell[] | null = null;
+    for (const s of left > 0 ? sizes : [...sizes].sort((a, b) => a - b)) {
+      if (left > 0 && s > left) continue;
+      for (const cells of this.rng.shuffle([...PIECES[s]])) {
+        if (!this.fits(this.buildPiece(cells))) continue;
+        if (left > 0 && !canTile(free, [...kept, cells], fillers)) continue;
+        if (holes.has(signature(cells))) hole ??= cells;
+        else if (!inHand.has(signature(cells))) return this.buildPiece(cells);
+        else double ??= cells;
+      }
+      if (double) return this.buildPiece(double);
+    }
+    return hole && this.buildPiece(hole);
+  }
+
+  /** Pièce ordinaire de cette taille qui rentre quelque part, parmi PIECE_TRIES essais ; sinon donnée quand même. */
+  private naturalPiece(size: number): Piece {
     const inHand = new Set(this.hand.map((p) => p && pieceSignature(p)));
     const tries = this.rng.shuffle([...PIECES[size]]).slice(0, PIECE_TRIES);
     let double: Piece | null = null;
@@ -258,26 +319,18 @@ export class Game {
 
   /**
    * Probabilités des tailles de pièce (1 à 4 cases) : de PIECE_SIZE_WEIGHTS au début à
-   * PIECE_SIZE_WEIGHTS_LATE dans les longues parties. Les grosses pièces demandent plus de place :
-   * il faut jouer de plus en plus serré.
+   * PIECE_SIZE_WEIGHTS_LATE dans les longues parties (les grosses pièces demandent plus de place :
+   * il faut jouer de plus en plus serré), et vers END_SIZE_WEIGHTS quand la forme est presque
+   * pleine (voir END_SMALL_CELLS).
    */
   sizeWeights(): number[] {
     const t = this.lateness();
-    return PIECE_SIZE_WEIGHTS.map((w, i) => w + (PIECE_SIZE_WEIGHTS_LATE[i] - w) * t);
-  }
-
-  /** Nombre de cases libres jusqu'auquel une forme bloquée se referme d'elle-même (voir canClose). */
-  closeMax(): number {
-    return Math.round(CLOSE_MAX_CELLS + (CLOSE_MAX_CELLS_LATE - CLOSE_MAX_CELLS) * this.lateness());
-  }
-
-  /**
-   * Vrai si, bloqué, on peut refermer la forme plutôt que perdre : il reste au plus closeMax()
-   * cases libres, ou on est encore dans les GRACE_SHAPES premières formes.
-   */
-  private canClose(): boolean {
-    const left = this.active.cells.size - this.filled.size;
-    return left <= this.closeMax() || this.shapesCompleted < GRACE_SHAPES;
+    const base = PIECE_SIZE_WEIGHTS.map((w, i) => w + (PIECE_SIZE_WEIGHTS_LATE[i] - w) * t);
+    // Vers la fin de la forme, les tailles glissent doucement vers les petites pièces.
+    const free = this.active.cells.size - this.filled.size;
+    const [lo, hi] = END_SMALL_CELLS;
+    const u = Math.max(0, Math.min(1, (hi - free) / (hi - lo)));
+    return base.map((w, i) => w + (END_SIZE_WEIGHTS[i] - w) * u);
   }
 
   /** Avancée dans la montée en difficulté : 0 avant DIFFICULTY_RAMP_START, 1 à partir de DIFFICULTY_RAMP_END. */

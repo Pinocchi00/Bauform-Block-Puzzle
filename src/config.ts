@@ -58,32 +58,40 @@ export const PIECE_SIZE_WEIGHTS = [0.05, 0.3, 0.34, 0.31];
 
 /**
  * Une pièce posée est remplacée tout de suite (toujours 3 pièces en main). Sa taille est tirée
- * sans regarder la forme, puis on essaie PIECE_TRIES pièces ordinaires (barre, L, T, carré…) de
- * cette taille, tirées au hasard : la première qui rentre quelque part est donnée ; si aucune ne
- * rentre, la pièce est donnée quand même. Le jeu ne taille jamais de pièce sur mesure et ne
- * choisit pas la taille selon les trous. Dans un espace libre grand et compact, presque toute
- * taille rentre ; dans des petits trous ou des couloirs, rarement : c'est comme ça qu'on perd.
- * Plus la valeur est haute, plus le jeu aide. À 19 (le nombre de pièces de 4 cases), toutes les
- * pièces de la taille tirée sont essayées. Mesuré : en dessous de 8, le hasard redevient décisif
- * (un bon joueur ne fait plus que 2 fois mieux qu'un joueur au hasard, contre 3,5 fois à 19).
+ * sans regarder la forme. Le plus souvent, l'aide discrète choisit la pièce (voir HELP_CHANCE) ;
+ * sinon, on essaie PIECE_TRIES pièces ordinaires (barre, L, T, carré…) de cette taille, tirées
+ * au hasard : la première qui rentre quelque part est donnée ; si aucune ne rentre, la pièce est
+ * donnée quand même. Aucune pièce n'est jamais taillée sur mesure.
  */
 export const PIECE_TRIES = 19;
 
 /**
- * Fin de forme : si on est bloqué (aucune pièce en main ne rentre) alors qu'il ne reste que ce
- * nombre de cases libres ou moins, on ne perd pas : la forme se referme d'elle-même, mais sans
- * le bonus de forme. Finir une forme pile rapporte donc des points ; le jeu ne donne jamais
- * « la pièce qu'il faut ».
- * Plus généreux au début (CLOSE_MAX_CELLS), moins dans les longues parties
- * (CLOSE_MAX_CELLS_LATE, atteint à DIFFICULTY_RAMP_END formes).
+ * Aide discrète : probabilité qu'une nouvelle pièce soit choisie pour garder la forme finissable
+ * avec les pièces déjà en main (toujours une pièce ordinaire, de la taille tirée si possible).
+ * Les pièces qui finiront la forme arrivent ainsi bien avant la fin, mêlées aux autres. Une pièce
+ * qui a la forme exacte d'un trou n'est donnée qu'en dernier recours (quand le joueur a posé une
+ * pièce de travers). Baisse de HELP_CHANCE à HELP_CHANCE_LATE dans les longues parties ; toujours
+ * active pendant la période de grâce.
+ * Mesuré (npm run sim, joueur soigneux / expert) : en fin de forme, pièces à la forme exacte d'un
+ * trou 38 % / 17 % (contre 63 % / 53 % avec l'ancienne pièce de fin taillée sur mesure) ; forme
+ * finie avec une pièce reçue au coup d'avant 55 % / 33 % (contre 96 %). Interdire tout à fait de
+ * donner le dernier bloc fait tomber les parties à 2 à 4 formes.
  */
-export const CLOSE_MAX_CELLS = 5;
-export const CLOSE_MAX_CELLS_LATE = 3;
+export const HELP_CHANCE = 0.85;
+export const HELP_CHANCE_LATE = 0.5;
+
+/**
+ * Fin de forme : quand il reste moins de END_SMALL_CELLS[1] cases libres, les tailles de pièce
+ * glissent doucement vers END_SIZE_WEIGHTS (atteint à END_SMALL_CELLS[0] cases). Les petites
+ * pièces arrivent avant que les derniers trous existent : elles donnent de la marge pour finir.
+ */
+export const END_SMALL_CELLS = [4, 14];
+export const END_SIZE_WEIGHTS = [0.12, 0.45, 0.33, 0.1];
 
 /**
  * Montée en difficulté : à partir de DIFFICULTY_RAMP_START formes terminées, les pièces
- * grossissent doucement (jusqu'aux probabilités PIECE_SIZE_WEIGHTS_LATE) et une forme bloquée
- * se referme avec moins de cases libres (CLOSE_MAX_CELLS_LATE), atteints à DIFFICULTY_RAMP_END formes.
+ * grossissent doucement (jusqu'aux probabilités PIECE_SIZE_WEIGHTS_LATE) et l'aide discrète
+ * joue moins souvent (HELP_CHANCE_LATE), atteints à DIFFICULTY_RAMP_END formes.
  * Il faut jouer de plus en plus serré. Les parties ordinaires ne changent donc pas ; seules
  * les très longues sont raccourcies.
  * Mesuré : sans montée, un joueur appliqué a joué 24 min (114 formes) ; l'affiche devient
@@ -94,9 +102,8 @@ export const DIFFICULTY_RAMP_START = 10;
 export const DIFFICULTY_RAMP_END = 35;
 
 /**
- * Période de grâce : pendant les premières formes de la partie, si plus rien ne rentre, la forme
- * se referme d'elle-même (sans bonus), quel que soit le nombre de cases libres : pas de défaite
- * possible. Évite les parties
+ * Période de grâce : pendant les premières formes de la partie, l'aide discrète joue à chaque
+ * pièce : on ne perd que si on s'éloigne vraiment de toute façon de finir. Évite les parties
  * de moins d'une minute (mesuré : 44 s et 51 s, avec 1 et 2 formes seulement, frustrantes et
  * avec une affiche presque vide).
  */

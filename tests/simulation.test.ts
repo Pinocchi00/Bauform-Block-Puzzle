@@ -6,6 +6,8 @@
 // Plus l'écart entre les trois est grand, plus la partie dépend du joueur et pas de la chance.
 // « pièces exactes » : part des pièces reçues en fin de forme (8 cases libres ou moins) qui ont
 // exactement la forme d'un des trous. Trop haut, on a l'impression que le jeu donne la bonne pièce.
+// « dernière pièce tombée à pic » : part des formes finies avec une pièce reçue juste avant
+// (au remplacement précédent). Trop haut, on sent que la fin est donnée.
 
 import { it } from 'vitest';
 import { Game } from '../src/game';
@@ -41,7 +43,9 @@ function play(seed: number, level: Level) {
   let moves = 0;
   let singles = 0;
   let dealt = 0;
-  let closed = 0;
+  let finished = 0;
+  let lastJustDealt = 0;
+  const dealtAt = new Map<number, number>();
   let endPieces = 0;
   let endExact = 0;
   const seen = new Set<number>();
@@ -49,6 +53,7 @@ function play(seed: number, level: Level) {
     for (const p of g.hand) {
       if (p && !seen.has(p.id)) {
         seen.add(p.id);
+        dealtAt.set(p.id, moves);
         dealt++;
         if (p.cells.length === 1) singles++;
       }
@@ -73,7 +78,11 @@ function play(seed: number, level: Level) {
       }
     }
     const shape = g.shapesCompleted;
-    if (g.place(best.slot, best.x, best.y)?.closed) closed++;
+    const placed = g.hand[best.slot]!;
+    if (g.place(best.slot, best.x, best.y)?.completed) {
+      finished++;
+      if (moves === dealtAt.get(placed.id)) lastJustDealt++;
+    }
     if (g.shapesCompleted === shape) {
       const regions = g.freeRegions();
       if (regions.reduce((n, r) => n + r.length, 0) <= 8) {
@@ -86,7 +95,7 @@ function play(seed: number, level: Level) {
     }
     moves++;
   }
-  return { shapes: g.shapesCompleted, moves, singles, dealt, closed, score: g.score, endPieces, endExact };
+  return { shapes: g.shapesCompleted, moves, singles, dealt, finished, lastJustDealt, score: g.score, endPieces, endExact };
 }
 
 it('simulation de parties', () => {
@@ -102,9 +111,9 @@ it('simulation de parties', () => {
       '| médiane', shapes[shapes.length >> 1],
       '| max', shapes[shapes.length - 1],
       '| poses moy', avg((r) => r.moves),
-      '| refermées', ((100 * runs.reduce((a, r) => a + r.closed, 0)) / runs.reduce((a, r) => a + r.shapes, 0)).toFixed(0) + ' %',
       '| score moy', avg((r) => r.score),
       '| pièces exactes', ((100 * runs.reduce((a, r) => a + r.endExact, 0)) / runs.reduce((a, r) => a + r.endPieces, 0)).toFixed(0) + ' %',
+      '| dernière pièce tombée à pic', ((100 * runs.reduce((a, r) => a + r.lastJustDealt, 0)) / runs.reduce((a, r) => a + r.finished, 0)).toFixed(0) + ' %',
       '| cubes seuls', (singles * 100).toFixed(1) + ' %',
       '| ≤ 2 formes', runs.filter((r) => r.shapes <= 2).length + '/60',
       '| > 40 formes', runs.filter((r) => r.shapes > 40).length + '/60',
