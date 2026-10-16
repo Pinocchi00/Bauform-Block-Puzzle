@@ -2,6 +2,8 @@
 # Résultat : onglet « Actions » du dépôt > la dernière exécution > « Artifacts » en bas de page.
 #  - bauform-test-apk : APK à installer directement sur un téléphone (version de test)
 #  - bauform-play-aab : fichier .aab pour Google Play (signé seulement si la clé est configurée)
+# L'APK de test est aussi publié dans la version « test » (onglet Releases, téléchargeable depuis
+# le téléphone) et sur la branche « apk-test ».
 name: Android
 
 on:
@@ -17,6 +19,9 @@ on:
       - 'vite.config.ts'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -79,6 +84,26 @@ jobs:
           name: bauform-play-aab
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+
+      - name: APK de test dans la version « test » et sur la branche « apk-test »
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/apk/bauform-test.apk
+          short=${GITHUB_SHA::7}
+          notes="APK de test de Bauform (« Bauform test »), construit depuis $short sur ${GITHUB_REF_NAME}. À installer directement sur un téléphone Android."
+          gh release view test >/dev/null 2>&1 || gh release create test --prerelease --title "Bauform — APK de test" --notes "$notes" --target "$GITHUB_SHA"
+          gh release edit test --notes "$notes"
+          gh release upload test /tmp/apk/bauform-test.apk --clobber
+          cd /tmp/apk
+          echo "$notes" > README.md
+          git init -q -b apk-test
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add . && git commit -q -m "APK de test $short"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-test
 
       - name: Ménage
         if: always()
