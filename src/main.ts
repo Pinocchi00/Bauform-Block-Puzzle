@@ -23,7 +23,7 @@ import {
   type FigureMode,
 } from './render';
 import { Rng, randomSeed } from './rng';
-import { storage, type GameStats } from './storage';
+import { storage, type GameStats, type SavedGame } from './storage';
 
 // ---------- Éléments de la page ----------
 
@@ -46,6 +46,7 @@ const optVibrations = $<HTMLInputElement>('#opt-vibrations');
 $('#pause-btn').innerHTML = ICONS.pause;
 $('#resume-btn').innerHTML = ICONS.play;
 $('#expand-btn').innerHTML = ICONS.expand;
+$('#share-btn').innerHTML = ICONS.share;
 document.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => {
   el.innerHTML = ICONS[el.dataset.icon as keyof typeof ICONS];
 });
@@ -196,18 +197,21 @@ function renderDecor() {
  */
 function drawFigureInto(svg: SVGSVGElement, mode: FigureMode, pad: number) {
   const r = svg.getBoundingClientRect();
+  svg.innerHTML = figureContent(r.width, r.height, pad, mode, svg.id, MAX_CELL_PX * 1.5).markup;
+}
+
+/** La figure entière, centrée dans un cadre de w × h pixels. */
+function figureContent(w: number, h: number, pad: number, mode: FigureMode, id: string, maxScale = Infinity) {
   const b = figureBounds(posterShapes(game));
   const bw = b.x1 - b.x0;
   const bh = b.y1 - b.y0;
-  const s = Math.max(1, Math.min((r.width - pad * 2) / bw, (r.height - pad * 2) / bh, MAX_CELL_PX * 1.5));
-  const tx = (r.width - bw * s) / 2 - b.x0 * s;
-  const ty = (r.height - bh * s) / 2 - b.y0 * s;
+  const s = Math.max(1, Math.min((w - pad * 2) / bw, (h - pad * 2) / bh, maxScale));
+  const tx = (w - bw * s) / 2 - b.x0 * s;
+  const ty = (h - bh * s) / 2 - b.y0 * s;
   const lines = posterLinesMarkup(game, new Rng(game.seed ^ 0x27d4eb2f));
-  svg.innerHTML =
-    `<g transform="translate(${tx} ${ty}) scale(${s})">` +
-    figureMarkup(game, GAP_PX / s, mode, svg.id) +
-    lines +
-    '</g>';
+  const markup =
+    `<g transform="translate(${tx} ${ty}) scale(${s})">` + figureMarkup(game, GAP_PX / s, mode, id) + lines + '</g>';
+  return { markup, s };
 }
 
 // ---------- Partie ----------
@@ -218,12 +222,45 @@ function readSeedFromUrl(): number | null {
 }
 
 function newGame(seed = randomSeed()) {
+  storage.clearSavedGame();
   // La figure finale est pensée pour l'écran entier (affiche de fin, en portrait).
-  game = new Game(seed, window.innerWidth / window.innerHeight);
-  gameId = Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-  startedAt = Date.now();
-  recordAtStart = storage.getRecord();
-  playMs = 0;
+  startGame(new Game(seed, window.innerWidth / window.innerHeight));
+}
+
+/** Reprend la partie laissée en cours (appli fermée, téléphone redémarré…). */
+function resumeSavedGame(): boolean {
+  const saved = storage.getSavedGame();
+  const g = saved && Game.replay(saved.seed, saved.aspect, saved.moves);
+  if (!saved || !g || g.over) {
+    storage.clearSavedGame();
+    return false;
+  }
+  startGame(g, saved);
+  return true;
+}
+
+/** Enregistre la partie en cours, pour la retrouver au prochain lancement. */
+function saveGame() {
+  if (!game || game.over || ending || !game.history.length) return;
+  const saved: SavedGame = {
+    v: 1,
+    id: gameId,
+    seed: game.seed,
+    aspect: game.aspect,
+    moves: game.history,
+    startedAt,
+    playMs: Math.round(playMs + (clockStart === null ? 0 : performance.now() - clockStart)),
+    recordAtStart,
+  };
+  storage.setSavedGame(saved);
+}
+
+function startGame(g: Game, saved?: SavedGame) {
+  game = g;
+  gameId = saved?.id ?? Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+  startedAt = saved?.startedAt ?? Date.now();
+  recordAtStart = saved?.recordAtStart ?? storage.getRecord();
+  playMs = saved?.playMs ?? 0;
   clockStart = null;
   ending = false;
   app.classList.remove('form-complete');
@@ -238,6 +275,7 @@ function newGame(seed = randomSeed()) {
   renderScore();
   gainEl.classList.remove('show');
   setScreen('play');
+  showTutorial();
 }
 
 /** Relancer une partie, avec une pub interstitielle toutes les ~3 minutes de jeu. */
@@ -269,6 +307,7 @@ function saveStats() {
 function showGameOver() {
   ending = false;
   stopClock();
+  storage.clearSavedGame();
   saveStats();
   const isRecord = game.score > recordAtStart;
   if (game.score > storage.getRecord()) storage.setRecord(game.score);
@@ -310,6 +349,143 @@ function showAd(done: () => void) {
   }, 1000);
 }
 
+// ---------- Guide du premier lancement ----------
+// Une pièce fantôme part du plateau et se pose dans la forme, tant que le joueur n'a
+// jamais posé de pièce. Il disparaît dès qu'on touche une pièce.
+
+const tutorialEl = $('#tutorial');
+const tutoGhost = $('#tuto-ghost');
+const tutoPiece = $<SVGSVGElement>('#tuto-piece');
+let tutoAnim: Animation | null = null;
+
+function hideTutorial() {
+  tutorialEl.hidden = true;
+  tutoAnim?.cancel();
+  tutoAnim = null;
+}
+
+function showTutorial() {
+  hideTutorial();
+  if (storage.getTutorialDone() || !game || game.over) return;
+  const slot = game.hand.findIndex((p) => p && game.fits(p));
+  const piece = game.hand[slot];
+  if (!piece) return;
+  const anchors = game.anchors(piece);
+  const a = anchors[Math.floor(anchors.length / 2)];
+  const s = cam.s;
+  const r = slots[slot].getBoundingClientRect();
+  const from = `translate(${r.left + r.width / 2}px, ${r.top + r.height / 2}px)`;
+  // Le doigt arrive là où il serait en posant vraiment la pièce (elle flotte au-dessus).
+  const to = `translate(${cam.tx + (a.x + piece.w / 2) * s}px, ${cam.ty + (a.y + piece.h) * s + DRAG_LIFT_PX}px)`;
+  tutoPiece.setAttribute('width', String(piece.w * s));
+  tutoPiece.setAttribute('height', String(piece.h * s));
+  tutoPiece.style.left = `${(-piece.w * s) / 2}px`;
+  tutoPiece.style.top = `${-DRAG_LIFT_PX - piece.h * s}px`;
+  tutoPiece.innerHTML = pieceMarkup(piece, s);
+  tutorialEl.hidden = false;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    tutoGhost.style.transform = to;
+    return;
+  }
+  tutoAnim = tutoGhost.animate(
+    [
+      { transform: from, opacity: 0, offset: 0 },
+      { transform: from, opacity: 1, offset: 0.12, easing: 'cubic-bezier(.45,0,.25,1)' },
+      { transform: to, opacity: 1, offset: 0.6 },
+      { transform: to, opacity: 0, offset: 0.82 },
+      { transform: to, opacity: 0, offset: 1 },
+    ],
+    { duration: 2800, iterations: Infinity },
+  );
+}
+
+// ---------- Partager l'affiche ----------
+
+const POSTER_PAPER = '#e4dccd';
+
+/** L'affiche de fin en image PNG (1080 × 1440), avec le nom du jeu et le score. */
+async function posterPng(): Promise<Blob> {
+  const W = 1080;
+  const H = 1440;
+  const side = 90;
+  const top = 90;
+  const bottom = 210;
+  const fw = W - side * 2;
+  const fh = H - top - bottom;
+  const { markup, s } = figureContent(fw, fh, 0, 'poster', 'share');
+  // Les traits ont une épaisseur fixe à l'écran : on la remet à l'échelle de l'image.
+  const k = W / 390;
+  const fixed = markup.replace(
+    /stroke-width="([\d.]+)" vector-effect="non-scaling-stroke"/g,
+    (_, w: string) => `stroke-width="${(Number(w) * k) / s}"`,
+  );
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${fw}" height="${fh}" viewBox="0 0 ${fw} ${fh}">${fixed}</svg>`;
+  const img = new Image();
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  await img.decode();
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = POSTER_PAPER;
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(img, side, top, fw, fh);
+
+  try {
+    await document.fonts.load('500 38px Jost');
+  } catch {
+    // police de secours
+  }
+  const y = H - bottom / 2 + 14;
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = "500 38px Jost, 'Futura', sans-serif";
+  ctx.letterSpacing = '9px';
+  ctx.fillStyle = '#141414';
+  ctx.textAlign = 'left';
+  ctx.fillText('BAUFORM', side, y);
+  ctx.font = "400 30px Jost, 'Futura', sans-serif";
+  ctx.letterSpacing = '4px';
+  ctx.fillStyle = '#5f5a51';
+  ctx.textAlign = 'right';
+  const number = String(game.shapes.length).padStart(2, '0');
+  ctx.fillText(`Nº ${number}  ·  ${fmt(game.score)}`, W - side, y);
+
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('image impossible'))), 'image/png'),
+  );
+}
+
+/** Partage l'affiche (menu de partage du téléphone) ou, à défaut, la télécharge. */
+async function sharePoster() {
+  const btn = $<HTMLButtonElement>('#share-btn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const blob = await posterPng();
+    const name = `bauform-${String(game.shapes.length).padStart(2, '0')}-${game.score}.png`;
+    const file = new File([blob], name, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Bauform' });
+      } catch {
+        // partage annulé : rien à faire
+      }
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ---------- Glisser-déposer ----------
 // Au doigt, on utilise les événements « touch » (les plus fiables sur téléphone,
 // y compris dans une page intégrée à une autre appli) ; à la souris, les « pointer ».
@@ -339,6 +515,7 @@ function canInteract(): boolean {
 function beginDrag(slotIndex: number, id: number, x: number, y: number): boolean {
   const piece = game.hand[slotIndex];
   if (!canInteract() || drag || !piece) return false;
+  hideTutorial();
   drag = {
     slot: slotIndex,
     piece,
@@ -413,12 +590,17 @@ function endDrag(drop: boolean) {
     selected = wasSelected ? null : slot;
   }
   renderTray();
+  if (selected === null) showTutorial();
 }
 
 function placePiece(slot: number, anchor: { x: number; y: number }) {
   selected = null;
   const res = game.place(slot, anchor.x, anchor.y);
   if (!res) return;
+  if (!storage.getTutorialDone()) {
+    storage.setTutorialDone();
+    hideTutorial();
+  }
   // La note monte à mesure que la forme se remplit ; une forme finie joue son carillon.
   if (!res.completed) {
     const todo = game.active.cells.size - game.prefilled.size;
@@ -436,7 +618,9 @@ function placePiece(slot: number, anchor: { x: number; y: number }) {
     feedback.complete(game.shapes[game.shapes.length - 2].color);
     fitCamera(true);
   }
+  if (!res.gameOver) saveGame();
   if (res.gameOver) {
+    storage.clearSavedGame();
     ending = true;
     stopClock();
     setTimeout(() => {
@@ -455,6 +639,7 @@ function tapBoard(x: number, y: number) {
   if (piece && anchor) placePiece(selected, anchor);
   else selected = null;
   renderTray();
+  if (selected === null) showTutorial();
 }
 
 const onControl = (t: EventTarget | null) => t instanceof Element && !!t.closest('button, label, .slot');
@@ -558,6 +743,7 @@ $('#retry-btn').addEventListener('click', () => {
     renderScore();
     fitCamera(false);
     setScreen('play');
+    saveGame();
   });
 });
 
@@ -566,17 +752,24 @@ $('#expand-btn').addEventListener('click', () => {
   drawFigureInto($<SVGSVGElement>('#full-figure'), 'poster', 24);
 });
 $('#full-screen').addEventListener('click', () => setScreen('over'));
+$('#share-btn').addEventListener('click', () => void sharePoster());
 
 // On quitte l'app ou on change d'onglet : pause automatique (le chrono s'arrête).
+// La partie est enregistrée à ce moment-là : Android peut fermer l'appli sans prévenir.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) openPause();
+  if (document.hidden) {
+    openPause();
+    saveGame();
+  }
 });
+window.addEventListener('pagehide', saveGame);
 
 window.addEventListener('resize', () => {
   if (!game) return;
   renderDecor();
   fitCamera(false);
   renderTray();
+  if (!tutorialEl.hidden) showTutorial();
   if (screen === 'over') drawFigureInto($<SVGSVGElement>('#over-figure'), 'end', 8);
   if (screen === 'full') drawFigureInto($<SVGSVGElement>('#full-figure'), 'poster', 24);
 });
@@ -585,8 +778,9 @@ window.addEventListener('resize', () => {
 
 let pressTimer = 0;
 const scoreBox = $('#score-box');
+// Réservé au développement : les joueurs n'ont pas accès à cet écran.
 scoreBox.addEventListener('pointerdown', () => {
-  pressTimer = window.setTimeout(openDebug, 700);
+  if (import.meta.env.DEV) pressTimer = window.setTimeout(openDebug, 700);
 });
 for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) {
   scoreBox.addEventListener(ev, () => clearTimeout(pressTimer));
@@ -631,7 +825,9 @@ $('#debug-clear').addEventListener('click', () => {
 
 // ---------- C'est parti : directement en partie ----------
 
-newGame(readSeedFromUrl() ?? randomSeed());
+// Une seed dans l'adresse lance cette partie-là ; sinon on reprend la partie en cours, s'il y en a une.
+const urlSeed = readSeedFromUrl();
+if (urlSeed !== null || !resumeSavedGame()) newGame(urlSeed ?? randomSeed());
 
 // En développement seulement : accès au jeu depuis la console, pour les tests.
 if (import.meta.env.DEV) {

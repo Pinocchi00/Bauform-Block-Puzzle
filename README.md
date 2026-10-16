@@ -40,6 +40,14 @@ Tous les réglages sont dans [`src/config.ts`](src/config.ts) : couleurs, gap en
 
 Chaque partie a une « seed ». Elle est visible dans l'écran de mesures (appui long sur le score). Ajouter `#seed123456` à l'adresse relance exactement la même suite de formes et de pièces.
 
+## Partie en cours, guide, affiche
+
+- La partie en cours est enregistrée après chaque pièce (seed + coups joués) et reprise au lancement suivant. Une seed dans l'adresse lance une nouvelle partie à la place.
+- Au tout premier lancement, un guide montre comment glisser une pièce ; il disparaît dès la première pièce posée.
+- Sur l'écran de fin, le bouton de partage crée une image de l'affiche (1080 × 1440) : menu de partage du téléphone, ou téléchargement.
+- La police Jost est incluse dans le jeu (`src/fonts/`, licence OFL) : rien n'est chargé depuis Internet.
+- Icônes et manifeste dans `public/` ; le dessin source est `public/favicon.svg`.
+
 ## Écran de mesures
 
-Appui long (0,7 s) sur le score : durée de jeu, formes terminées, pièces posées et score des 20 dernières parties, avec leurs moyennes. La durée ne compte que le temps de jeu (pauses et pubs exclues).
+En développement seulement (`npm run dev`). Appui long (0,7 s) sur le score : durée de jeu, formes terminées, pièces posées et score des 20 dernières parties, avec leurs moyennes. La durée ne compte que le temps de jeu (pauses et pubs exclues).

@@ -273,5 +273,6 @@ export const ICONS = {
   restart: `<svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   video: `<svg viewBox="0 0 24 24" width="22" height="22"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg>`,
   expand: `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>`,
+  share: `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 13v6h14v-6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   crown: `<svg viewBox="0 0 24 16" width="24" height="16" aria-hidden="true"><path d="M1 15h22L21 3l-5 6-4-8-4 8-5-6z" fill="${COLORS.yellow}"/></svg>`,
 };

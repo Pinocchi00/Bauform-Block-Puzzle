@@ -1,3 +1,19 @@
+/* Police Jost (licence OFL, voir src/fonts/OFL.txt), incluse dans le jeu : marche sans connexion. */
+@font-face {
+  font-family: 'Jost';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/jost-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Jost';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/jost-latin-500-normal.woff2') format('woff2');
+}
+
 :root {
   --bg: #c1baae;
   --inside: #cfc8bc;
@@ -725,3 +741,71 @@ button:focus-visible,
   #score.score-pop, #app.form-complete #shape-status strong { animation: none; }
   #shape-progress-fill, .slot::before { transition: none; }
 }
+
+/* ===== Guide du premier lancement ===== */
+#tutorial {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+}
+#app:not([data-screen='play']) #tutorial {
+  display: none;
+}
+#tuto-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+#tuto-piece {
+  position: absolute;
+  opacity: 0.55;
+  overflow: visible;
+}
+.tuto-finger {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  margin: -19px 0 0 -19px;
+  border: 2px solid var(--black);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  box-sizing: border-box;
+}
+#tuto-text {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--safe-bottom) + var(--tray-h) + 14px);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+#tuto-text strong {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+#tuto-text span {
+  font-size: 12px;
+  color: var(--text2);
+}
+@media (prefers-reduced-motion: reduce) {
+  #tuto-ghost { opacity: 1; }
+}
+
+/* ===== Partager l'affiche ===== */
+#share-btn {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  background: rgba(228, 220, 205, 0.9);
+  border-radius: 50%;
+  color: var(--black);
+}
+#share-btn:disabled { opacity: 0.5; }

@@ -209,3 +209,30 @@ describe('partie', () => {
     expect(game.hand.some((p) => p && game.fits(p))).toBe(true);
   });
 });
+
+describe('reprise d\'une partie sauvegardée', () => {
+  it('rejouer la seed et les coups redonne exactement la même partie', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const rng = new Rng(seed * 7919);
+      const game = new Game(seed, 0.46);
+      for (let n = 0; n < 60 && !game.over; n++) {
+        const options = game.hand.flatMap((p, slot) => (p ? game.anchors(p).map((a) => ({ slot, ...a })) : []));
+        const o = options[Math.floor(rng.next() * options.length)];
+        game.place(o.slot, o.x, o.y);
+        if (game.over && !game.retryUsed) game.retryShape();
+      }
+      const copy = Game.replay(seed, 0.46, JSON.parse(JSON.stringify(game.history)));
+      expect(copy).not.toBeNull();
+      expect(copy!.score).toBe(game.score);
+      expect(copy!.shapes.length).toBe(game.shapes.length);
+      expect([...copy!.filled].sort()).toEqual([...game.filled].sort());
+      expect(copy!.hand.map((p) => p && p.cells)).toEqual(game.hand.map((p) => p && p.cells));
+      expect(copy!.over).toBe(game.over);
+      expect(copy!.retryUsed).toBe(game.retryUsed);
+    }
+  });
+
+  it('refuse une sauvegarde dont un coup est impossible', () => {
+    expect(Game.replay(1, 0.46, [[0, 999, 999]])).toBeNull();
+  });
+});

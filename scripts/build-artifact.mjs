@@ -12,7 +12,11 @@ const read = (ext) =>
     .map((f) => readFileSync('dist/assets/' + f, 'utf8'))
     .join('\n');
 
-const css = read('.css');
+// Les polices sont glissées dans le CSS (data:), pour que le fichier se suffise à lui-même.
+const css = read('.css').replace(/url\((?:\.\/)?([\w.-]+\.woff2)\)/g, (_, file) => {
+  const data = readFileSync('dist/assets/' + file).toString('base64');
+  return `url(data:font/woff2;base64,${data})`;
+});
 const js = read('.js').replaceAll('</script', '<\\/script');
 const start = html.indexOf('<!-- APP:START -->');
 const end = html.indexOf('<!-- APP:END -->');
@@ -20,7 +24,6 @@ if (start < 0 || end < 0) throw new Error('Marqueurs APP:START / APP:END introuv
 const body = html.slice(start, end);
 
 const out = `<title>Bauform</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500&display=swap">
 <style>
 ${css}
 </style>

@@ -2,6 +2,7 @@
 // En phase 2, ce fichier passera sur @capacitor/preferences.
 
 import { STATS_KEEP } from './config';
+import type { Move } from './game';
 
 export interface Settings {
   sound: boolean;
@@ -17,6 +18,18 @@ export interface GameStats {
   shapesCompleted: number;
   piecesPlaced: number;
   score: number;
+}
+
+/** Partie en cours, pour la reprendre si l'appli est fermée. */
+export interface SavedGame {
+  v: 1;
+  id: string;
+  seed: number;
+  aspect: number;
+  moves: Move[];
+  startedAt: number;
+  playMs: number;
+  recordAtStart: number;
 }
 
 const PREFIX = 'bauform.';
@@ -57,4 +70,21 @@ export const storage = {
     write('stats', list.slice(0, STATS_KEEP));
   },
   clearStats: () => write('stats', []),
+
+  getSavedGame: (): SavedGame | null => {
+    const g = read<SavedGame | null>('current', null);
+    return g && g.v === 1 && Array.isArray(g.moves) ? g : null;
+  },
+  setSavedGame: (g: SavedGame) => write('current', g),
+  clearSavedGame: () => {
+    try {
+      localStorage.removeItem(PREFIX + 'current');
+    } catch {
+      // rien à faire
+    }
+  },
+
+  /** Le petit guide du premier lancement a déjà été suivi. */
+  getTutorialDone: (): boolean => read('tutorialDone', false),
+  setTutorialDone: () => write('tutorialDone', true),
 };

@@ -41,6 +41,9 @@ export interface MoveResult {
 
 export const HAND_SIZE = 3;
 
+/** Un coup joué : une pose [emplacement, x, y], ou « retry » (réessayer la forme). */
+export type Move = [number, number, number] | 'retry';
+
 /** Forme d'une pièce, sous forme de texte (deux pièces identiques ont la même). */
 function pieceSignature(p: Piece): string {
   return p.cells.map((c) => c.dx + ':' + c.dy).join(' ');
@@ -77,6 +80,8 @@ export class Game {
   shapesCompleted = 0;
   over = false;
   retryUsed = false;
+  /** Tous les coups joués depuis le début : rejoués dans l'ordre, ils redonnent la même partie. */
+  readonly history: Move[] = [];
   private shapeStartScore = 0;
   private nextPieceId = 1;
 
@@ -88,6 +93,23 @@ export class Game {
     this.shapes.push(first);
     this.figureBox = { ...first.box };
     this.dealHand();
+  }
+
+  /**
+   * Refait une partie à partir de sa seed et de ses coups (partie sauvegardée).
+   * Renvoie null si un coup n'est plus valable (sauvegarde d'une ancienne version du jeu).
+   */
+  static replay(seed: number, aspect: number, moves: readonly Move[]): Game | null {
+    const game = new Game(seed, aspect);
+    for (const m of moves) {
+      if (m === 'retry') {
+        if (game.retryUsed) return null;
+        game.retryShape();
+      } else if (!game.place(m[0], m[1], m[2])) {
+        return null;
+      }
+    }
+    return game;
   }
 
   get active(): Shape {
@@ -129,6 +151,7 @@ export class Game {
     const piece = this.hand[slot];
     if (this.over || !piece || !this.canPlace(piece, ax, ay)) return null;
 
+    this.history.push([slot, ax, ay]);
     for (const c of piece.cells) this.filled.add(cellKey(ax + c.dx, ay + c.dy));
     this.hand[slot] = null;
     this.piecesPlaced++;
@@ -154,6 +177,7 @@ export class Game {
 
   /** « Réessayer la forme » : la forme active repart de son début. */
   retryShape(): void {
+    this.history.push('retry');
     this.filled = new Set(this.prefilled);
     this.score = this.shapeStartScore;
     this.retryUsed = true;
