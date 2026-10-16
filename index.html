@@ -16,14 +16,22 @@
       <svg id="board" aria-hidden="true"><g id="camera"><g id="figure"></g><g id="preview"></g></g></svg>
 
       <header id="hud">
-        <div id="score-box">
-          <div id="score">0</div>
-          <div id="gain"></div>
+        <div id="shape-status" aria-label="Forme en cours">
+          <span class="mini-label">Forme</span><strong id="shape-number">01</strong>
         </div>
-        <button id="pause-btn" class="icon-btn" aria-label="Pause"></button>
+        <div id="score-box">
+          <div id="score-label">Score</div>
+          <div id="score">0</div>
+          <div id="shape-progress" role="progressbar" aria-label="Progression de la forme" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="shape-progress-fill"></span>
+          </div>
+          <div id="gain" aria-live="polite"></div>
+        </div>
+        <button id="pause-btn" class="icon-btn" aria-label="Mettre en pause"></button>
       </header>
 
       <div id="tray">
+        <div id="tray-caption" aria-hidden="true">Choisir une pièce</div>
         <div class="slot" data-slot="0"></div>
         <div class="slot" data-slot="1"></div>
         <div class="slot" data-slot="2"></div>
@@ -33,6 +41,7 @@
 
       <section id="pause-screen" class="screen">
         <div class="head">
+          <div class="eyebrow">En pause</div>
           <div class="big-score" id="pause-score">0</div>
           <div class="record-line"><span class="crown"></span><span id="pause-record">0</span></div>
         </div>
@@ -46,20 +55,22 @@
 
       <section id="over-screen" class="screen">
         <div class="head">
+          <div class="eyebrow">Composition nº <span id="over-number">01</span></div>
           <div class="big-score xl" id="over-score">0</div>
           <div class="record-line" id="over-record"></div>
+          <div class="over-meta"><span id="over-shapes">0 formes</span><span class="dot" aria-hidden="true"></span><span id="over-pieces">0 pièces</span></div>
         </div>
         <div id="over-figure-box">
           <svg id="over-figure" aria-label="Votre figure"></svg>
           <button id="expand-btn" class="icon-btn" aria-label="Voir la figure en plein écran"></button>
         </div>
         <div class="actions">
-          <button id="retry-btn" class="btn outline"><span class="ico" data-icon="video"></span>Réessayer la forme</button>
+          <button id="retry-btn" class="btn outline"><span class="ico" data-icon="restart"></span>Réessayer la forme</button>
           <button id="replay-btn" class="btn solid">Rejouer</button>
         </div>
       </section>
 
-      <section id="full-screen" class="screen"><svg id="full-figure" aria-label="Votre figure"></svg></section>
+      <section id="full-screen" class="screen"><svg id="full-figure" aria-label="Votre figure"></svg><div class="full-hint">Toucher pour revenir</div></section>
 
       <section id="ad-screen" class="screen">
         <div class="ad-label">[PUB]</div>

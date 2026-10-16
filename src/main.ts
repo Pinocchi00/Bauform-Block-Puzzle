@@ -36,6 +36,9 @@ const previewEl = $<SVGGElement>('#preview');
 const dragPieceEl = $<SVGGElement>('#drag-piece');
 const scoreEl = $('#score');
 const gainEl = $('#gain');
+const shapeNumberEl = $('#shape-number');
+const shapeProgressEl = $('#shape-progress');
+const shapeProgressFillEl = $('#shape-progress-fill');
 const slots = [...document.querySelectorAll<HTMLElement>('.slot')];
 const optSound = $<HTMLInputElement>('#opt-sound');
 const optVibrations = $<HTMLInputElement>('#opt-vibrations');
@@ -166,13 +169,20 @@ function renderTray() {
 
 function renderScore() {
   scoreEl.textContent = fmt(game.score);
+  shapeNumberEl.textContent = String(game.shapes.length).padStart(2, '0');
+  const fraction = game.active.cells.size ? game.filled.size / game.active.cells.size : 0;
+  const percentage = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
+  shapeProgressEl.setAttribute('aria-valuenow', String(percentage));
+  shapeProgressFillEl.style.width = `${percentage}%`;
 }
 
 function showGain(gain: number) {
   gainEl.textContent = '+' + fmt(gain);
   gainEl.classList.remove('show');
-  void gainEl.offsetWidth; // relance l'animation
+  scoreEl.classList.remove('score-pop');
+  void gainEl.offsetWidth; // relance les animations après chaque pose
   gainEl.classList.add('show');
+  scoreEl.classList.add('score-pop');
 }
 
 function renderDecor() {
@@ -216,6 +226,7 @@ function newGame(seed = randomSeed()) {
   playMs = 0;
   clockStart = null;
   ending = false;
+  app.classList.remove('form-complete');
   drag = null;
   selected = null;
   previewEl.innerHTML = '';
@@ -263,6 +274,9 @@ function showGameOver() {
   if (game.score > storage.getRecord()) storage.setRecord(game.score);
 
   $('#over-score').textContent = fmt(game.score);
+  $('#over-number').textContent = String(game.shapes.length).padStart(2, '0');
+  $('#over-shapes').textContent = `${game.shapesCompleted} forme${game.shapesCompleted !== 1 ? 's' : ''}`;
+  $('#over-pieces').textContent = `${game.piecesPlaced} pièce${game.piecesPlaced !== 1 ? 's' : ''}`;
   $('#over-record').innerHTML = isRecord
     ? `<span class="crown">${ICONS.crown}</span><span>Nouveau record</span>`
     : `<span class="crown">${ICONS.crown}</span><span>${fmt(storage.getRecord())}</span>`;
@@ -275,6 +289,12 @@ function showGameOver() {
 
 let adTimer = 0;
 function showAd(done: () => void) {
+  // Aucune fausse publicité dans une version destinée aux joueurs.
+  // L'intégration d'un vrai SDK publicitaire fera l'objet d'une version distincte.
+  if (!import.meta.env.DEV) {
+    done();
+    return;
+  }
   setScreen('ad');
   let left = FAKE_AD_SECONDS;
   const count = $('#ad-count');
@@ -408,6 +428,10 @@ function placePiece(slot: number, anchor: { x: number; y: number }) {
   renderScore();
   renderFigure();
   if (res.completed) {
+    // Une micro-animation souligne la progression sans retarder la prochaine forme.
+    app.classList.remove('form-complete');
+    void app.offsetWidth;
+    app.classList.add('form-complete');
     // La forme qui vient d'être finie est l'avant-dernière (une nouvelle vient d'apparaître).
     feedback.complete(game.shapes[game.shapes.length - 2].color);
     fitCamera(true);
