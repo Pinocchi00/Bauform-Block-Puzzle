@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Écran de démarrage de secours (anciens Android) : papier crème et icône au centre. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/bauform_paper" />
+    <item android:gravity="center" android:width="216dp" android:height="216dp"
+        android:drawable="@mipmap/ic_launcher_foreground" />
+</layer-list>

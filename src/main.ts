@@ -22,6 +22,7 @@ import {
   previewMarkup,
   type FigureMode,
 } from './render';
+import { isNative, minimizeApp, nativeSharePng, onNativeEvents } from './native';
 import { Rng, randomSeed } from './rng';
 import { storage, type GameStats, type SavedGame } from './storage';
 
@@ -464,6 +465,10 @@ async function sharePoster() {
   try {
     const blob = await posterPng();
     const name = `bauform-${String(game.shapes.length).padStart(2, '0')}-${game.score}.png`;
+    if (isNative) {
+      await nativeSharePng(blob, name, 'Bauform');
+      return;
+    }
     const file = new File([blob], name, { type: 'image/png' });
     if (navigator.canShare?.({ files: [file] })) {
       try {
@@ -763,6 +768,20 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('pagehide', saveGame);
+
+// Appli Android : le bouton « retour » suit les écrans du jeu, puis met l'appli en arrière-plan.
+onNativeEvents({
+  back: () => {
+    if (screen === 'play') openPause();
+    else if (screen === 'full') setScreen('over');
+    else if (screen === 'debug') setScreen('play');
+    else if (screen !== 'ad') minimizeApp();
+  },
+  pause: () => {
+    openPause();
+    saveGame();
+  },
+});
 
 window.addEventListener('resize', () => {
   if (!game) return;

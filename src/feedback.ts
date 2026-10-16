@@ -13,6 +13,7 @@
 // de téléphone sonne bien, sans monter dans les aigus qui agressent l'oreille (filtre à 3 000 Hz).
 
 import { COLORS } from './config';
+import { isNative, nativeVibrate } from './native';
 import { storage } from './storage';
 
 /** La voix de chaque couleur : note de base (MIDI), durée de résonance, clarté du bois. */
@@ -119,6 +120,10 @@ function block(midi: number, delay: number, volume: number, voice: Voice): void 
 
 function vibrate(pattern: number | number[]): void {
   if (!storage.getSettings().vibrations) return;
+  if (isNative) {
+    nativeVibrate(pattern);
+    return;
+  }
   try {
     navigator.vibrate?.(pattern);
   } catch {

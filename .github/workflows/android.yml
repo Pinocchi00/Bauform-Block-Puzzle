@@ -1,0 +1,86 @@
+# Construit l'appli Android sur les serveurs de GitHub (ils ont le SDK Android).
+# Résultat : onglet « Actions » du dépôt > la dernière exécution > « Artifacts » en bas de page.
+#  - bauform-test-apk : APK à installer directement sur un téléphone (version de test)
+#  - bauform-play-aab : fichier .aab pour Google Play (signé seulement si la clé est configurée)
+name: Android
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'android/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Dépendances et tests du jeu
+        run: |
+          npm ci
+          npm test
+
+      - name: Jeu web, copié dans le projet Android
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: Clé de signature (secrets du dépôt)
+        if: env.HAS_RELEASE_KEY == 'true'
+        working-directory: android
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > upload-key.jks
+          {
+            echo "storeFile=upload-key.jks"
+            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          } > keystore.properties
+
+      - name: Construction (APK de test + bundle Google Play)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug bundleRelease \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName=1.0.${{ github.run_number }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bauform-test-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bauform-play-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+      - name: Ménage
+        if: always()
+        working-directory: android
+        run: rm -f upload-key.jks keystore.properties

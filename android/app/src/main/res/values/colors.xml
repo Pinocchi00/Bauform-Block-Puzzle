@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Couleurs du jeu (src/config.ts) -->
+    <color name="bauform_background">#C1BAAE</color>
+    <color name="bauform_paper">#E8DFCD</color>
+    <color name="bauform_black">#141414</color>
+    <color name="colorPrimary">#141414</color>
+    <color name="colorPrimaryDark">#141414</color>
+    <color name="colorAccent">#AE3622</color>
+</resources>

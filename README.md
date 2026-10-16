@@ -22,6 +22,11 @@ Autres commandes :
 | `npm run build` | version finale du site, dans `dist/` |
 | `npm run build:artifact` | version en un seul fichier HTML, dans `dist-artifact/` |
 
+## Version Android
+
+Le projet Android (Capacitor) est dans `android/`. GitHub construit l'APK de test et le fichier
+Google Play à chaque modification : voir [docs/ANDROID.md](docs/ANDROID.md).
+
 ## Où régler quoi
 
 Tous les réglages sont dans [`src/config.ts`](src/config.ts) : couleurs, gap entre tuiles, taille des formes, chevauchement, tailles des pièces, points, fréquence des pubs…
