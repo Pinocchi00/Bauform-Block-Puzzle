@@ -103,7 +103,7 @@ export class Game {
     const game = new Game(seed, aspect);
     for (const m of moves) {
       if (m === 'retry') {
-        if (game.retryUsed) return null;
+        if (game.retryUsed || !game.over) return null;
         game.retryShape();
       } else if (!game.place(m[0], m[1], m[2])) {
         return null;

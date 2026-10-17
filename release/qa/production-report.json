@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "checks": [
+    "reprise du jeu compilé",
+    "aucune API de debug exposée",
+    "données corrompues tolérées",
+    "politique accessible dans le build"
+  ]
+}

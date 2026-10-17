@@ -1,28 +1,20 @@
-# Construit l'appli Android sur les serveurs de GitHub (ils ont le SDK Android).
-# Résultat : onglet « Actions » du dépôt > la dernière exécution > « Artifacts » en bas de page.
-#  - bauform-test-apk : APK à installer directement sur un téléphone (version de test)
-#  - bauform-play-aab : fichier .aab pour Google Play (signé seulement si la clé est configurée)
-# L'APK de test est aussi publié dans la version « test » (onglet Releases, téléchargeable depuis
-# le téléphone) et sur la branche « apk-test ».
+# Construit l'APK de test et le bundle Google Play (artefacts de l'exécution).
+# Rien n'est publié sur Google Play. Seul l'APK de test est mis à disposition, pour l'installer
+# depuis le téléphone : version « test » (pré-version) de l'onglet Releases et branche « apk-test ».
 name: Android
-
 on:
   push:
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'android/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'capacitor.config.ts'
-      - 'vite.config.ts'
-      - '.github/workflows/android.yml'
+    branches: [ccr-65d37fd4-svnpwh, release/google-play-1.0, main]
+    paths: ['src/**', 'public/**', 'android/**', 'scripts/**', 'tests/**', 'release/config.json', 'index.html', 'package*.json', 'capacitor.config.ts', '.github/workflows/android.yml']
+  pull_request:
   workflow_dispatch:
-
+    inputs:
+      require_signed:
+        description: 'Exiger un bundle signé et les informations de publication complètes'
+        type: boolean
+        default: false
 permissions:
-  contents: write
-
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,81 +23,141 @@ jobs:
       HAS_RELEASE_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
-
-      - name: Dépendances et tests du jeu
+      - name: Tests et synchronisation Android
         run: |
           npm ci
           npm test
-
-      - name: Jeu web, copié dans le projet Android
+          npm run sim
+          npm run android:sync
+      - name: Vérification de publication (sur demande)
+        if: inputs.require_signed == true
+        env:
+          REQUIRE_SIGNED: ${{ inputs.require_signed }}
         run: |
-          npm run build
-          npx cap sync android
-
-      - name: Clé de signature (secrets du dépôt)
+          test "$HAS_RELEASE_KEY" = true || { echo 'Clé de signature absente.'; exit 1; }
+          npm run release:check
+      - name: Signature avec les secrets du dépôt
         if: env.HAS_RELEASE_KEY == 'true'
-        working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > upload-key.jks
-          {
-            echo "storeFile=upload-key.jks"
-            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
-            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}"
-          } > keystore.properties
-
-      - name: Construction (APK de test + bundle Google Play)
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          # Java .properties : protège les antislashs, espaces et caractères non ASCII.
+          def value(s):
+              out = ''
+              for c in s:
+                  code = ord(c)
+                  if code > 0xffff:
+                      code -= 0x10000
+                      out += '\\u%04x\\u%04x' % (0xd800 + (code >> 10), 0xdc00 + (code & 1023))
+                  elif code < 32 or code > 126: out += '\\u%04x' % code
+                  elif c in '\\ =:#!': out += '\\' + c
+                  else: out += c
+              return out
+          for k in ('KEYSTORE_B64', 'STORE_PASS', 'KEY_ALIAS', 'KEY_PASS'):
+              if not os.environ.get(k): raise SystemExit('Secret de signature incomplet : ' + k)
+          Path('android/upload-key.jks').write_bytes(base64.b64decode(os.environ['KEYSTORE_B64'], validate=True))
+          props = {'storeFile': 'upload-key.jks', 'storePassword': os.environ['STORE_PASS'],
+                   'keyAlias': os.environ['KEY_ALIAS'], 'keyPassword': os.environ['KEY_PASS']}
+          Path('android/keystore.properties').write_text(''.join(k+'='+value(v)+'\n' for k,v in props.items()), encoding='ascii')
+          PY
+      - name: APK de test et AAB (version 1.0.0)
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug bundleRelease \
-            -PversionCode=${{ github.run_number }} \
-            -PversionName=1.0.${{ github.run_number }}
-
+          ./gradlew --no-daemon assembleDebug bundleRelease lintRelease \
+            -PversionCode=${{ github.run_number }} -PversionName=1.0.0
+      - name: Vérifier la signature du bundle
+        if: env.HAS_RELEASE_KEY == 'true'
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          path = 'android/app/build/outputs/bundle/release/app-release.aab'
+          with zipfile.ZipFile(path) as z:
+              if not any(n.upper().startswith('META-INF/') and n.upper().endswith(('.RSA', '.EC', '.DSA')) for n in z.namelist()):
+                  raise SystemExit('Bundle non signé : ne pas envoyer à Google Play.')
+          PY
+          jarsigner -verify android/app/build/outputs/bundle/release/app-release.aab
       - uses: actions/upload-artifact@v4
         with:
           name: bauform-test-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
       - uses: actions/upload-artifact@v4
         with:
-          name: bauform-play-aab
+          name: bauform-aab-${{ env.HAS_RELEASE_KEY == 'true' && 'signed' || 'UNSIGNED-do-not-upload' }}
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-lint
+          path: android/app/build/reports/lint-results-release*
+      - name: Supprimer les fichiers de signature temporaires
+        if: always()
+        run: rm -f android/upload-key.jks android/keystore.properties
+  mobile-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run qa:mobile
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-web-QA-not-native-Android
+          path: |
+            release/qa/
+            release/graphics/screenshots-web/
 
-      - name: APK de test dans la version « test » et sur la branche « apk-test »
-        if: github.event_name != 'pull_request'
+  # APK de test téléchargeable depuis le téléphone. Seul ce job a le droit d'écrire,
+  # et seulement après une construction réussie sur une branche du dépôt (jamais sur une PR).
+  publish-test-apk:
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bauform-test-apk
+          path: apk
+      - name: Pré-version « test » et branche « apk-test »
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          mkdir -p /tmp/apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/apk/bauform-test.apk
+          cp apk/*.apk bauform-test.apk
           short=${GITHUB_SHA::7}
-          notes="APK de test de Bauform (« Bauform test »), construit depuis $short sur ${GITHUB_REF_NAME}. À installer directement sur un téléphone Android."
+          notes="APK de test de Bauform (« Bauform test »), construit depuis $short sur ${GITHUB_REF_NAME}. À installer directement sur un téléphone Android. Ce n'est pas la version Google Play."
           gh release view test >/dev/null 2>&1 || gh release create test --prerelease --title "Bauform — APK de test" --notes "$notes" --target "$GITHUB_SHA"
           gh release edit test --notes "$notes"
-          gh release upload test /tmp/apk/bauform-test.apk --clobber
-          cd /tmp/apk
+          gh release upload test bauform-test.apk --clobber
+          mkdir pub && mv bauform-test.apk pub/ && cd pub
           echo "$notes" > README.md
           git init -q -b apk-test
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add . && git commit -q -m "APK de test $short"
           git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk-test
-
-      - name: Ménage
-        if: always()
-        working-directory: android
-        run: rm -f upload-key.jks keystore.properties

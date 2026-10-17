@@ -1,95 +1,68 @@
-# Bauform — version Android
+# Android — préparation 1.0 (17/10/2026)
 
-Le jeu web (`dist/`) est emballé dans une appli Android avec [Capacitor](https://capacitorjs.com) 8.
-Le projet Android est dans `android/`.
+Le projet Android et la préparation 1.0 sont sur la branche `ccr-65d37fd4-svnpwh`. GitHub Actions construit l'APK de test et le bundle Google Play à chaque modification.
 
-| | |
+| Élément | Valeur |
 |---|---|
-| Identifiant de l'appli | `io.github.pinocchi00.bauform` (définitif après la 1re publication) |
-| Version de test | `io.github.pinocchi00.bauform.debug`, nommée « Bauform test » : s'installe à côté de la vraie |
-| Android minimum | 7.0 (API 24) |
-| Android ciblé | API 36 (exigé par Google Play depuis le 31 août 2026) |
-| Orientation | portrait |
+| Production | `io.github.pinocchi00.bauform` |
+| Debug | `io.github.pinocchi00.bauform.debug` (« Bauform test ») |
+| SDK minimum | 24 (Android 7) |
+| SDK cible / compilation | 36 |
+| JDK de construction | 21 |
+| Version lisible prévue | 1.0.0 |
+| versionCode CI | numéro d'exécution, toujours supérieur au dernier code envoyé sur Play |
+| Compilation | GitHub Actions (Java 21, SDK 36) ; en local, Android Studio |
 
-## 1. Installer la version de test sur ton téléphone
+## Installer l'APK de test sur un téléphone
 
-GitHub construit l'appli à chaque modification du jeu.
+Après chaque construction réussie, l'APK de test (« Bauform test ») est disponible :
 
-1. Sur github.com, ouvrir le dépôt, onglet **Actions**, puis la dernière exécution **Android** (coche verte).
-2. En bas de la page, dans **Artifacts**, télécharger **bauform-test-apk** (un .zip qui contient l'APK).
-3. Envoyer l'APK sur le téléphone (ou le télécharger depuis le téléphone), l'ouvrir, et accepter
-   « installer des applis de sources inconnues » quand Android le demande.
+- depuis le téléphone : https://github.com/Pinocchi00/Bauform-Block-Puzzle/releases/download/test/bauform-test.apk (pré-version « test » de l'onglet Releases) ;
+- dans les artefacts de l'exécution (onglet Actions) et sur la branche `apk-test`.
 
-Pour relancer une construction sans rien modifier : onglet **Actions** > **Android** > **Run workflow**.
+L'AAB des artefacts porte la mention `signed` ou `UNSIGNED-do-not-upload` : seul le premier peut être envoyé sur Google Play.
 
-## 2. Créer la clé de signature (une seule fois)
+## Construire après intégration
 
-Google Play n'accepte que des fichiers signés. La clé reste chez toi : elle n'est jamais dans le dépôt.
+```bash
+npm ci
+npm test
+npm run sim
+npm run android:sync
+cd android
+./gradlew assembleDebug bundleRelease lintRelease -PversionCode=3 -PversionName=1.0.0
+```
 
-Sur un ordinateur avec Java installé :
+Sous Windows, utiliser `gradlew.bat`. `3` est seulement un exemple supérieur au code 2 de l'APK de référence ; utiliser un code supérieur à **tous** les envois Play réels au moment venu. Les futurs artefacts CI portent clairement la mention signed ou UNSIGNED.
+
+## Clé d'upload — jamais dans le dépôt ou le chat
+
+Une clé d'upload stable reste nécessaire. Ne pas réutiliser la clé de debug, ne pas remplacer une clé déjà utilisée sur Google Play. Si aucune clé n'existe, en créer une localement avec l'outil officiel Java, en saisissant les mots de passe dans les invites :
 
 ```bash
 keytool -genkeypair -v -keystore bauform-upload.jks -alias bauform -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-Garde `bauform-upload.jks` et ses mots de passe en lieu sûr (gestionnaire de mots de passe + une copie de sauvegarde).
-Avec la signature d'applications par Google Play (activée par défaut), une clé perdue peut être remplacée
-en contactant le support, mais c'est long.
+Conserver le fichier et ses mots de passe dans un endroit sûr avec sauvegarde. Une clé d'upload (`bauform-upload.jks`, alias `bauform`, empreinte SHA-256 `AC:6B:D6:DC:…:DC:89`) a été créée le 16/10/2026 et remise au créateur avec ses valeurs de secrets ; elle n'est pas dans le dépôt.
 
-## 3. Donner la clé à GitHub
+Pour construire localement, créer `android/keystore.properties` (ignoré par git) avec `storeFile`, `storePassword`, `keyAlias`, `keyPassword`. Le chemin storeFile est relatif au dossier Android. Ne jamais committer ce fichier.
 
-Dépôt > **Settings** > **Secrets and variables** > **Actions** > **New repository secret**, quatre secrets :
+Pour GitHub Actions, saisir directement dans Settings > Secrets and variables > Actions :
 
-| Nom | Valeur |
+| Secret | Contenu privé |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | le fichier .jks encodé en base64 (voir ci-dessous) |
-| `ANDROID_KEYSTORE_PASSWORD` | le mot de passe du fichier |
-| `ANDROID_KEY_ALIAS` | `bauform` |
-| `ANDROID_KEY_PASSWORD` | le mot de passe de la clé (souvent le même) |
+| ANDROID_KEYSTORE_BASE64 | Octets du keystore encodés en base64 |
+| ANDROID_KEYSTORE_PASSWORD | Mot de passe du keystore |
+| ANDROID_KEY_ALIAS | Alias de la clé |
+| ANDROID_KEY_PASSWORD | Mot de passe de la clé |
 
-Encoder le fichier : sous Windows (PowerShell)
-`[Convert]::ToBase64String([IO.File]::ReadAllBytes("bauform-upload.jks")) | Set-Clipboard`,
-sous macOS `base64 -i bauform-upload.jks | pbcopy`, sous Linux `base64 -w0 bauform-upload.jks`.
+Sous PowerShell, l'encodage peut aller directement dans le presse-papiers sans être affiché :
+`[Convert]::ToBase64String([IO.File]::ReadAllBytes('bauform-upload.jks')) | Set-Clipboard`
 
-Ensuite, chaque construction produit **bauform-play-aab** signé : c'est le fichier à envoyer sur Google Play.
-Sans ces secrets, le .aab est produit mais non signé (Google Play le refusera).
+Le workflow utilise les secrets via l'environnement, échappe les valeurs Java properties, vérifie la signature et supprime les fichiers temporaires. La construction n'a que le droit de lecture ; seul le job `publish-test-apk`, après une construction réussie (jamais sur une PR), écrit la pré-version « test » et la branche `apk-test`. Rien n'est envoyé sur Google Play.
 
-## 4. Numéro de version
+Le lancement manuel `require_signed=true` vérifie aussi les champs de confidentialité. Ce contrôle ne publie rien, mais ne remplace ni les tests natifs ni le contrôle du fichier par Play.
 
-Chaque envoi sur Google Play doit avoir un `versionCode` plus grand que le précédent.
-Sur GitHub, c'est automatique : le numéro de l'exécution (`1.0.<n>`).
-En local : `./gradlew bundleRelease -PversionCode=12 -PversionName=1.0.12`.
+## Recette native requise
 
-## Construire sur son ordinateur (facultatif)
-
-Il faut Android Studio (il installe le SDK Android et Java).
-
-```bash
-npm ci
-npm run android:sync     # construit le jeu et le copie dans android/
-npm run android:open     # ouvre le projet dans Android Studio (bouton ▶ pour lancer sur un téléphone branché)
-```
-
-Pour signer en local, créer `android/keystore.properties` (ignoré par git) :
-
-```properties
-storeFile=../chemin/vers/bauform-upload.jks
-storePassword=...
-keyAlias=bauform
-keyPassword=...
-```
-
-## Ce qui est propre à l'appli
-
-- Bouton retour d'Android : en jeu, il ouvre la pause ; sur la pause ou l'écran de fin, il met l'appli en arrière-plan ; en plein écran, il revient à l'écran de fin.
-- Passer en arrière-plan met en pause et enregistre la partie.
-- Les vibrations passent par le vibreur du téléphone (réglables dans la pause).
-- Partager l'affiche ouvre le menu de partage d'Android.
-- Le jeu s'affiche sous les barres système et garde ses marges (encoche, barre de navigation).
-- Aucune connexion Internet n'est utilisée (police incluse, pas de pub, pas de statistiques envoyées).
-  La permission INTERNET reste déclarée par Capacitor, mais rien ne s'en sert.
-
-## Après une modification du jeu
-
-`npm run android:sync`, puis reconstruire (ou pousser sur GitHub : l'APK est reconstruit tout seul).
-Les icônes Android sont dans `android/app/src/main/res/mipmap-*`, tirées de `public/favicon.svg`.
+Suivre [`release/ANDROID_TESTS.md`](../release/ANDROID_TESTS.md). Le vibreur, le partage Android, le bouton retour, l'installation et les barres système restent à valider sur le nouveau paquet. Ne pas confondre une synchronisation Capacitor réussie avec une compilation Android réussie.

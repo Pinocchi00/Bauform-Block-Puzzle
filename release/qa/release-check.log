@@ -1,0 +1,9 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bauform@1.0.0 release:check
+> node scripts/check-release.mjs
+
+Identité publique de l’éditeur manquante.
+Adresse de support manquante ou invalide.
+URL HTTPS publique de confidentialité manquante.
+Politique encore préparatoire : compléter les coordonnées puis relire le texte.

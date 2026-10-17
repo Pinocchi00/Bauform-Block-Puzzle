@@ -1,0 +1,37 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bauform@1.0.0 android:sync
+> npm run build && cap sync android
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bauform@1.0.0 build
+> tsc --noEmit && vite build
+
+vite v8.3.1 building client environment for production...
+
+ WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+
+transforming...
+✓ 30 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                    5.06 kB │ gzip:  1.58 kB
+dist/assets/jost-latin-400-normal-q-RKOgPK.woff2   9.40 kB
+dist/assets/jost-latin-500-normal-41lBe9I9.woff2  10.47 kB
+dist/assets/index-DoqeCtY4.css                    12.00 kB │ gzip:  3.28 kB
+dist/assets/index-B9_1stHw.js                     57.78 kB │ gzip: 21.36 kB
+
+✓ built in 101ms
+✔ Copying web assets from dist to android/app/src/main/assets/public in 8.46ms
+✔ Creating capacitor.config.json in android/app/src/main/assets in 760.37μs
+✔ copy android in 20.72ms
+✔ Updating Android plugins in 1.69ms
+[info] Found 5 Capacitor plugins for android:
+       @capacitor/app@8.1.2
+       @capacitor/filesystem@8.1.5
+       @capacitor/haptics@8.0.2
+       @capacitor/share@8.0.3
+       @capacitor/splash-screen@8.0.2
+✔ update android in 34.25ms
+[info] Sync finished in 0.07s

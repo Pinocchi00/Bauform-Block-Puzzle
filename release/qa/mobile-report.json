@@ -1,0 +1,230 @@
+{
+  "source": "Jeu web réel en viewport mobile, pas une capture Android native",
+  "formats": [
+    {
+      "width": 320,
+      "height": 568,
+      "controls": [
+        {
+          "id": "expand-btn",
+          "x": 241,
+          "y": 372,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "share-btn",
+          "x": 31,
+          "y": 372,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "retry-btn",
+          "x": 24,
+          "y": 442,
+          "w": 272,
+          "h": 45
+        },
+        {
+          "id": "replay-btn",
+          "x": 24,
+          "y": 495,
+          "w": 272,
+          "h": 45
+        }
+      ],
+      "externalRequests": []
+    },
+    {
+      "width": 360,
+      "height": 640,
+      "controls": [
+        {
+          "id": "expand-btn",
+          "x": 281,
+          "y": 444,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "share-btn",
+          "x": 31,
+          "y": 444,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "retry-btn",
+          "x": 24,
+          "y": 514,
+          "w": 312,
+          "h": 45
+        },
+        {
+          "id": "replay-btn",
+          "x": 24,
+          "y": 567,
+          "w": 312,
+          "h": 45
+        }
+      ],
+      "externalRequests": []
+    },
+    {
+      "width": 360,
+      "height": 800,
+      "controls": [
+        {
+          "id": "expand-btn",
+          "x": 281,
+          "y": 579,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "share-btn",
+          "x": 31,
+          "y": 579,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "retry-btn",
+          "x": 24,
+          "y": 656,
+          "w": 312,
+          "h": 52
+        },
+        {
+          "id": "replay-btn",
+          "x": 24,
+          "y": 720,
+          "w": 312,
+          "h": 52
+        }
+      ],
+      "externalRequests": []
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "controls": [
+        {
+          "id": "expand-btn",
+          "x": 311,
+          "y": 623,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "share-btn",
+          "x": 31,
+          "y": 623,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "retry-btn",
+          "x": 24,
+          "y": 700,
+          "w": 342,
+          "h": 52
+        },
+        {
+          "id": "replay-btn",
+          "x": 24,
+          "y": 764,
+          "w": 342,
+          "h": 52
+        }
+      ],
+      "externalRequests": []
+    },
+    {
+      "width": 412,
+      "height": 915,
+      "controls": [
+        {
+          "id": "expand-btn",
+          "x": 333,
+          "y": 694,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "share-btn",
+          "x": 31,
+          "y": 694,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "retry-btn",
+          "x": 26,
+          "y": 771,
+          "w": 360,
+          "h": 52
+        },
+        {
+          "id": "replay-btn",
+          "x": 26,
+          "y": 835,
+          "w": 360,
+          "h": 52
+        }
+      ],
+      "externalRequests": []
+    },
+    {
+      "width": 800,
+      "height": 1280,
+      "controls": [
+        {
+          "id": "expand-btn",
+          "x": 721,
+          "y": 1059,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "share-btn",
+          "x": 31,
+          "y": 1059,
+          "w": 48,
+          "h": 48
+        },
+        {
+          "id": "retry-btn",
+          "x": 220,
+          "y": 1136,
+          "w": 360,
+          "h": 52
+        },
+        {
+          "id": "replay-btn",
+          "x": 220,
+          "y": 1200,
+          "w": 360,
+          "h": 52
+        }
+      ],
+      "externalRequests": []
+    }
+  ],
+  "errors": [],
+  "checks": [
+    "pose tactile par sélection",
+    "glisser tactile",
+    "reprise après rechargement",
+    "pause/reprise",
+    "préférences",
+    "fin de partie",
+    "export PNG",
+    "plein écran",
+    "retry et sa reprise",
+    "jeu chargé hors ligne",
+    "confidentialité",
+    "aucune requête distante observée"
+  ]
+}

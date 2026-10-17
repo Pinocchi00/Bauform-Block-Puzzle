@@ -28,7 +28,7 @@ export async function nativeSharePng(blob: Blob, name: string, title: string): P
       reader.onerror = () => reject(reader.error);
       reader.readAsDataURL(blob);
     });
-    const file = await Filesystem.writeFile({ path: name, data, directory: Directory.Cache });
+    const file = await Filesystem.writeFile({ path: 'posters/' + name, data, directory: Directory.Cache, recursive: true });
     await Share.share({ title, files: [file.uri], dialogTitle: title });
     return true;
   } catch (e) {

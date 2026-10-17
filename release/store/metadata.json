@@ -1,0 +1,17 @@
+{
+  "appType": "GAME",
+  "category": "GAME_PUZZLE",
+  "defaultLanguage": "fr-FR",
+  "price": "FREE",
+  "containsAds": false,
+  "inAppPurchases": false,
+  "suggestedTags": ["Puzzle", "Block puzzle", "Abstract", "Single player", "Offline"],
+  "tagsNote": "Sélectionner uniquement les libellés réellement proposés et pertinents en Play Console (5 maximum).",
+  "supportEmail": null,
+  "website": null,
+  "privacyPolicyUrl": null,
+  "targetAudienceProposal": "13–15, 16–17, 18+ : proposition de positionnement ados/adultes, à confirmer selon le public réellement visé.",
+  "contentRating": "Questionnaire IARC à compléter ; aucune classification n'a été attribuée.",
+  "countries": "À choisir avant mise en production, sans inventer de disponibilité.",
+  "publicationStatus": "PREPARATION_ONLY_NO_DEVELOPER_ACCOUNT"
+}

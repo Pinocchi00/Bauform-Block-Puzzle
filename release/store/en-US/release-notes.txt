@@ -1,0 +1,3 @@
+Welcome to Bauform.
+Fill geometric shapes, reveal your composition and share your poster.
+This first release includes saved-game resumption, a local best score and sound and vibration settings. Free, with no ads or in-app purchases.

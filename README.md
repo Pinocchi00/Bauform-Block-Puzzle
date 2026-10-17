@@ -1,58 +1,58 @@
-# Bauform
+# Bauform: Block Puzzle
 
-Jeu de puzzle mobile inspiré des affiches Bauhaus. Phase 1 : prototype web jouable dans le navigateur du téléphone.
+Puzzle mobile inspiré du Bauhaus : remplir des silhouettes géométriques pour composer progressivement une affiche. TypeScript, SVG, Vite et Capacitor 8 pour Android. Version 1.0 prévue gratuite, sans publicité ni achats intégrés.
 
-## Lancer le jeu
+## État et branches
 
-Il faut [Node.js](https://nodejs.org) (version 20 ou plus).
+- Base Android auditée : `ccr-65d37fd4-svnpwh`, commit `53d3859b9642cd1c5d857907bf4704ddf66bac83`.
+- Préparation locale : `release/google-play-1.0` ; référence locale : branche/tag `reference/android-2026-10-17`.
+- La branche par défaut distante `claude/phase-1-5nds4w` reste une ancienne version. Elle n'a pas été modifiée.
+- `apk-test` contient l'ancien APK de test, pas la source de référence.
+- L'écriture distante a été refusée (403) pendant cette préparation. Voir `release/REPORT.md` pour les statuts exacts. Aucun jeu publié ni compte développeur créé.
+
+## Développement et vérifications
+
+Node.js 22.12+ et npm. Installer les versions du lockfile :
 
 ```bash
-npm install        # une seule fois, installe les outils
-npm run dev        # lance le jeu sur http://localhost:5173
+npm ci
+npm run dev
+npm test
+npm run sim
+npm run build
+npm run android:sync
 ```
 
-`npm run dev` affiche aussi une adresse « Network » (ex. `http://192.168.1.12:5173`) : ouvrez-la sur le téléphone, connecté au même Wi-Fi, pour jouer.
-
-Autres commandes :
-
-| Commande | Rôle |
+| Commande | Résultat |
 |---|---|
-| `npm test` | tests automatiques (règles du jeu) |
-| `npm run sim` | simule 60 parties jouées par des robots, pour estimer leur longueur |
-| `npm run build` | version finale du site, dans `dist/` |
-| `npm run build:artifact` | version en un seul fichier HTML, dans `dist-artifact/` |
+| `npm test` | Règles, reprise et stockage endommagé |
+| `npm run sim` | 60 parties par stratégie, aléatoire et prudente |
+| `npm run build` | TypeScript vérifié et build dans `dist/` |
+| `npm run qa:mobile` | Interactions et captures du vrai jeu web sur six formats ; Chromium Playwright requis (`npx playwright install chromium`) |
+| `node scripts/qa-production.mjs` | Smoke test du build, après la QA mobile |
+| `npm run build:artifact` | Aperçu HTML et politique séparée dans `dist-artifact/` |
+| `npm run privacy:prepare` | Génère le document local depuis `release/config.json` |
+| `npm run release:check` | Refuse les coordonnées manquantes avant la préparation d'une release signée |
 
-## Version Android
+## Android et préparation Google Play
 
-Le projet Android (Capacitor) est dans `android/`. GitHub construit l'APK de test et le fichier
-Google Play à chaque modification : voir [docs/ANDROID.md](docs/ANDROID.md).
+Projet dans `android/`, identifiant `io.github.pinocchi00.bauform`, API minimum 24, cible/compilation 36. La variante debug a le suffixe `.debug` et s'installe à côté de la production. Voir [documentation Android](docs/ANDROID.md).
 
-## Où régler quoi
+Tout le dossier de préparation est dans [`release/`](release/REPORT.md) : textes FR/EN, ressources graphiques, politique, réponses Sécurité des données, plan Console et recette native. Les captures web sont clairement distinguées des futures captures Android. Le workflow construit des artefacts et **ne publie rien**.
 
-Tous les réglages sont dans [`src/config.ts`](src/config.ts) : couleurs, gap entre tuiles, taille des formes, chevauchement, tailles des pièces, points, fréquence des pubs…
+## Organisation du jeu
 
-| Fichier | Contenu |
+| Fichier | Rôle |
 |---|---|
-| `src/game.ts` | règles : pièces, pose, score, défaite |
-| `src/shapes.ts` | formes et découpage en cellules sur la grille |
-| `src/generator.ts` | tirage des nouvelles formes |
-| `src/render.ts` | dessin SVG (tuiles, aperçu, décor) |
-| `src/main.ts` | écrans, glisser-déposer, caméra |
-| `src/storage.ts` | record, réglages, mesures (stockage local) |
-| `src/feedback.ts` | sons et vibrations |
+| `src/game.ts` | Règles, pièces, score et seconde chance |
+| `src/shapes.ts`, `geometry.ts`, `generator.ts`, `rng.ts` | Géométrie et génération déterministe |
+| `src/render.ts` | Dessin SVG du jeu et des affiches |
+| `src/main.ts` | Écrans, gestes, caméra, reprise et export |
+| `src/storage.ts` | Sauvegardes et statistiques locales validées |
+| `src/native.ts` | Cycle de vie Android, partage et vibrations |
+| `src/feedback.ts` | Sons Web Audio et retours tactiles |
+| `src/config.ts`, `style.css` | Réglages et identité visuelle |
 
-## Rejouer une partie précise
+Chaque partie conserve sa seed et ses coups ; une seed dans l'URL (`#seed17`) lance une partie déterministe. L'écran de diagnostic et le pilote de QA sont uniquement disponibles en développement, jamais dans le build de production.
 
-Chaque partie a une « seed ». Elle est visible dans l'écran de mesures (appui long sur le score). Ajouter `#seed123456` à l'adresse relance exactement la même suite de formes et de pièces.
-
-## Partie en cours, guide, affiche
-
-- La partie en cours est enregistrée après chaque pièce (seed + coups joués) et reprise au lancement suivant. Une seed dans l'adresse lance une nouvelle partie à la place.
-- Au tout premier lancement, un guide montre comment glisser une pièce ; il disparaît dès la première pièce posée.
-- Sur l'écran de fin, le bouton de partage crée une image de l'affiche (1080 × 1440) : menu de partage du téléphone, ou téléchargement.
-- La police Jost est incluse dans le jeu (`src/fonts/`, licence OFL) : rien n'est chargé depuis Internet.
-- Icônes et manifeste dans `public/` ; le dessin source est `public/favicon.svg`.
-
-## Écran de mesures
-
-En développement seulement (`npm run dev`). Appui long (0,7 s) sur le score : durée de jeu, formes terminées, pièces posées et score des 20 dernières parties, avec leurs moyennes. La durée ne compte que le temps de jeu (pauses et pubs exclues).
+La police Jost est embarquée avec sa licence OFL (`src/fonts/OFL.txt`). Aucun service d'analyse ou SDK publicitaire n'est intégré. Les sons sont générés sur l'appareil. La partie, le record et les vingt derniers résultats restent sur l'appareil. L'affiche PNG n'est partagée que sur action du joueur.

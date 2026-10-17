@@ -57,6 +57,7 @@
           <label class="row" for="opt-sound"><span>Son</span><input type="checkbox" id="opt-sound" class="switch" /></label>
           <label class="row" for="opt-vibrations"><span>Vibrations</span><input type="checkbox" id="opt-vibrations" class="switch" /></label>
           <button class="row link" id="restart-btn"><span>Recommencer</span><span class="ico" data-icon="restart"></span></button>
+          <a class="row link" href="privacy.html" id="privacy-link">Confidentialité</a>
         </div>
         <button id="resume-btn" class="round-btn" aria-label="Reprendre"></button>
       </section>
@@ -73,6 +74,7 @@
           <button id="expand-btn" class="icon-btn" aria-label="Voir la figure en plein écran"></button>
           <button id="share-btn" class="icon-btn" aria-label="Partager l'affiche"></button>
         </div>
+        <p id="share-status" role="status"></p>
         <div class="actions">
           <button id="retry-btn" class="btn outline"><span class="ico" data-icon="restart"></span>Réessayer la forme</button>
           <button id="replay-btn" class="btn solid">Rejouer</button>
@@ -80,11 +82,6 @@
       </section>
 
       <section id="full-screen" class="screen"><svg id="full-figure" aria-label="Votre figure"></svg><div class="full-hint">Toucher pour revenir</div></section>
-
-      <section id="ad-screen" class="screen">
-        <div class="ad-label">[PUB]</div>
-        <div id="ad-count"></div>
-      </section>
 
       <section id="debug-screen" class="screen">
         <div class="debug-head">

@@ -3,9 +3,7 @@
 import './style.css';
 import {
   DRAG_LIFT_PX,
-  FAKE_AD_SECONDS,
   GAP_PX,
-  INTERSTITIAL_MIN_PLAY_SECONDS,
   MAX_CELL_PX,
   VIEW_CELLS,
 } from './config';
@@ -57,7 +55,7 @@ const fmt = (n: number) => n.toLocaleString('fr-FR');
 
 // ---------- État ----------
 
-type Screen = 'play' | 'pause' | 'over' | 'full' | 'ad' | 'debug';
+type Screen = 'play' | 'pause' | 'over' | 'full' | 'debug';
 let screen: Screen = 'play';
 let game: Game;
 let gameId = '';
@@ -279,17 +277,10 @@ function startGame(g: Game, saved?: SavedGame) {
   showTutorial();
 }
 
-/** Relancer une partie, avec une pub interstitielle toutes les ~3 minutes de jeu. */
+/** Version 1.0 gratuite, sans publicité ni attente artificielle. */
 function relaunch() {
   stopClock();
-  const played = storage.getPlaySinceAd() + playMs;
-  if (played >= INTERSTITIAL_MIN_PLAY_SECONDS * 1000) {
-    storage.setPlaySinceAd(0);
-    showAd(() => newGame());
-  } else {
-    storage.setPlaySinceAd(played);
-    newGame();
-  }
+  newGame();
 }
 
 function saveStats() {
@@ -323,31 +314,6 @@ function showGameOver() {
   $('#retry-btn').hidden = game.retryUsed;
   setScreen('over');
   drawFigureInto($<SVGSVGElement>('#over-figure'), 'end', 8);
-}
-
-// ---------- Pubs simulées ----------
-
-let adTimer = 0;
-function showAd(done: () => void) {
-  // Aucune fausse publicité dans une version destinée aux joueurs.
-  // L'intégration d'un vrai SDK publicitaire fera l'objet d'une version distincte.
-  if (!import.meta.env.DEV) {
-    done();
-    return;
-  }
-  setScreen('ad');
-  let left = FAKE_AD_SECONDS;
-  const count = $('#ad-count');
-  count.textContent = String(left);
-  clearInterval(adTimer);
-  adTimer = window.setInterval(() => {
-    left--;
-    count.textContent = String(left);
-    if (left <= 0) {
-      clearInterval(adTimer);
-      done();
-    }
-  }, 1000);
 }
 
 // ---------- Guide du premier lancement ----------
@@ -462,11 +428,14 @@ async function sharePoster() {
   const btn = $<HTMLButtonElement>('#share-btn');
   if (btn.disabled) return;
   btn.disabled = true;
+  $('#share-status').textContent = '';
   try {
     const blob = await posterPng();
     const name = `bauform-${String(game.shapes.length).padStart(2, '0')}-${game.score}.png`;
     if (isNative) {
-      await nativeSharePng(blob, name, 'Bauform');
+      if (!await nativeSharePng(blob, name, 'Bauform')) {
+        throw new Error('partage indisponible');
+      }
       return;
     }
     const file = new File([blob], name, { type: 'image/png' });
@@ -486,6 +455,8 @@ async function sharePoster() {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch {
+    $('#share-status').textContent = 'Partage indisponible. Vous pouvez réessayer.';
   } finally {
     btn.disabled = false;
   }
@@ -740,16 +711,14 @@ for (const input of [optSound, optVibrations]) {
 }
 
 $('#retry-btn').addEventListener('click', () => {
-  if (game.retryUsed) return;
-  showAd(() => {
-    game.retryShape();
-    renderFigure();
-    renderTray();
-    renderScore();
-    fitCamera(false);
-    setScreen('play');
-    saveGame();
-  });
+  if (game.retryUsed || screen !== 'over') return;
+  game.retryShape();
+  renderFigure();
+  renderTray();
+  renderScore();
+  fitCamera(false);
+  setScreen('play');
+  saveGame();
 });
 
 $('#expand-btn').addEventListener('click', () => {
@@ -775,7 +744,7 @@ onNativeEvents({
     if (screen === 'play') openPause();
     else if (screen === 'full') setScreen('over');
     else if (screen === 'debug') setScreen('play');
-    else if (screen !== 'ad') minimizeApp();
+    else minimizeApp();
   },
   pause: () => {
     openPause();

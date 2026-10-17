@@ -98,16 +98,6 @@ export const EXACT_PIECE_CHANCE = 1;
 export const POINTS_PER_CELL = 10;
 export const BONUS_PER_SHAPE_CELL = 10;
 
-/** Pubs (simulées en phase 1). */
-/**
- * Pub entre deux parties : seulement si on a joué au moins ce temps (secondes) depuis
- * la dernière pub. Mesuré : une partie dure 1 min 40 en moyenne, mais beaucoup durent
- * moins d'une minute ; compter le temps plutôt que les parties évite d'enchaîner des pubs
- * après des défaites rapides (environ une pub toutes les 3 minutes de jeu).
- */
-export const INTERSTITIAL_MIN_PLAY_SECONDS = 180;
-export const FAKE_AD_SECONDS = 3;
-
 /** Nombre de parties gardées pour l'écran de debug. */
 export const STATS_KEEP = 20;
 

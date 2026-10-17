@@ -1,6 +1,5 @@
 // Sons (générés, sans fichier audio) et vibrations.
-// En phase 2, les vibrations passeront par @capacitor/haptics : dans une page web intégrée
-// (comme l'aperçu Claude), Android bloque les vibrations.
+// Les vibrations utilisent Capacitor sur Android, navigator.vibrate sur le web.
 //
 // Inspirations :
 //  - les briques : le « Bauspiel » d'Alma Siedhoff-Buscher (Bauhaus, 1923), un jeu de

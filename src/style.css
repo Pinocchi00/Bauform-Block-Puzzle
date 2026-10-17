@@ -156,8 +156,8 @@ button:focus-visible,
 }
 
 .icon-btn {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
   border-radius: 10px;
@@ -166,7 +166,7 @@ button:focus-visible,
 #pause-btn {
   position: absolute;
   right: 12px;
-  top: calc(var(--safe-top) + (var(--hud-h) - 44px) / 2);
+  top: calc(var(--safe-top) + (var(--hud-h) - 48px) / 2);
 }
 
 #tray {
@@ -261,7 +261,6 @@ button:focus-visible,
 #app[data-screen='pause'] #pause-screen,
 #app[data-screen='over'] #over-screen,
 #app[data-screen='full'] #full-screen,
-#app[data-screen='ad'] #ad-screen,
 #app[data-screen='debug'] #debug-screen {
   display: flex;
 }
@@ -274,8 +273,7 @@ button:focus-visible,
 
 /* À la fin, l'affiche a ses propres traits : on cache ceux du fond de jeu. */
 #app[data-screen='over'] #decor,
-#app[data-screen='full'] #decor,
-#app[data-screen='ad'] #decor {
+#app[data-screen='full'] #decor {
   visibility: hidden;
 }
 
@@ -455,26 +453,6 @@ button:focus-visible,
 #full-screen {
   padding: calc(var(--safe-top) + 24px) 16px calc(var(--safe-bottom) + 24px);
   cursor: pointer;
-}
-
-/* Pub simulée */
-
-#ad-screen {
-  background: var(--black);
-  color: var(--bg);
-  justify-content: center;
-  gap: 16px;
-  z-index: 30;
-}
-
-.ad-label {
-  font-size: 32px;
-  letter-spacing: 0.2em;
-}
-
-#ad-count {
-  font-size: 16px;
-  color: var(--grey);
 }
 
 /* Debug */
@@ -809,3 +787,7 @@ button:focus-visible,
   color: var(--black);
 }
 #share-btn:disabled { opacity: 0.5; }
+
+#privacy-link { color: inherit; text-decoration: none; }
+#share-status { margin: 0 0 6px; font-size: 13px; text-align: center; color: var(--text2); }
+#share-status:empty { display: none; }

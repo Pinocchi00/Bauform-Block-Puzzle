@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "53d3859b9642cd1c5d857907bf4704ddf66bac83",
+  "workflowRun": 38979833553,
+  "conclusion": "success",
+  "signatureStep": "skipped",
+  "artifacts": [
+    {
+      "name": "bauform-test-apk",
+      "id": 12080761737
+    },
+    {
+      "name": "bauform-play-aab",
+      "id": 12080811587
+    }
+  ],
+  "testApkSha256": "68274a3782eb7c21aa15a5edf41920029368687e6ec72f1c8fb3a654de6981b1",
+  "testApkInstalled": false,
+  "updatedNativeBuild": "blocked before compilation: Gradle network unavailable"
+}

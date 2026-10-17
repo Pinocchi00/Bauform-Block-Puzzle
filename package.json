@@ -1,7 +1,7 @@
 {
   "name": "bauform",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -11,10 +11,14 @@
     "sim": "vitest run tests/simulation.test.ts --silent=false --reporter=verbose",
     "build:artifact": "npm run build && node scripts/build-artifact.mjs",
     "android:sync": "npm run build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "qa:mobile": "node scripts/qa-mobile.mjs",
+    "privacy:prepare": "node scripts/prepare-privacy.mjs",
+    "release:check": "node scripts/check-release.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",
+    "@playwright/test": "^1.56.1",
     "typescript": "^5.9.3",
     "vite": "^8.3.1",
     "vitest": "^5.0.1"

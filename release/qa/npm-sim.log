@@ -1,0 +1,19 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> bauform@1.0.0 sim
+> vitest run tests/simulation.test.ts --silent=false --reporter=verbose
+
+
+ RUN  v5.0.1 /workspace/scratch/82212e16233f/bauform
+
+stderr | tests/simulation.test.ts > simulation de parties
+au hasard | formes moy 7.4 | médiane 6 | max 24 | poses moy 74.7 | cubes seuls 23.1 % | ≤ 2 formes 0/60 | > 40 formes 0/60
+soigneux  | formes moy 12.0 | médiane 10 | max 33 | poses moy 99.4 | cubes seuls 10.0 % | ≤ 2 formes 0/60 | > 40 formes 0/60
+
+ ✓ tests/simulation.test.ts > simulation de parties 2763ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  10:04:34
+   Duration  2.98s (tests 97%, transform 3%)
+
